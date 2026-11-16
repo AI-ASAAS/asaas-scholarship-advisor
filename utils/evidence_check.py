@@ -94,6 +94,23 @@ def verify_evidence(
             field_verification[field] = "verified"
             continue
 
+        # Special handling for accepts_yemeni
+        if field == "accepts_yemeni":
+            str_val = value.value if hasattr(value, "value") else str(value).lower()
+            if str_val == "unclear":
+                sanitized_fields[field] = "unclear"
+                field_verification[field] = "verified"
+                continue
+            # For yes/no, check quote under accepts_yemeni or fallback to eligibility
+            quote = evidence.get("accepts_yemeni") or evidence.get("eligibility")
+            if quote and isinstance(quote, str) and is_quote_in_text(quote, page_text):
+                sanitized_fields[field] = str_val
+                field_verification[field] = "verified"
+            else:
+                sanitized_fields[field] = "unclear"
+                field_verification[field] = "unverified"
+            continue
+
         quote = evidence.get(field)
 
         if not quote or not isinstance(quote, str) or not quote.strip():
