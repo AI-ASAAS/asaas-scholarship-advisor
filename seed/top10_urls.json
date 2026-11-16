@@ -1,0 +1,62 @@
+[
+  {
+    "title": "Türkiye Bursları (Turkish Government Scholarship)",
+    "official_url": "https://www.turkiyeburslari.gov.tr/",
+    "country": "Turkey",
+    "notes": "Fully funded undergraduate and postgraduate scholarship open to Yemeni students."
+  },
+  {
+    "title": "Chevening Scholarships",
+    "official_url": "https://www.chevening.org/scholarships/",
+    "country": "United Kingdom",
+    "notes": "UK government global scholarship programme for master's degrees."
+  },
+  {
+    "title": "DAAD Development-Related Postgraduate Courses (EPOS / Helmut-Schmidt)",
+    "official_url": "https://www.daad.de/en/study-and-research-in-germany/scholarships/",
+    "country": "Germany",
+    "notes": "German academic exchange service scholarships for developing countries."
+  },
+  {
+    "title": "Stipendium Hungaricum Scholarship Programme",
+    "official_url": "https://stipendiumhungaricum.hu/",
+    "country": "Hungary",
+    "notes": "Hungarian government scholarship program based on bilateral agreements."
+  },
+  {
+    "title": "Romanian Government Scholarship (MFA Romania)",
+    "official_url": "https://www.mae.ro/en/node/10250",
+    "country": "Romania",
+    "notes": "Annual scholarships offered by the Romanian state to non-EU foreign citizens."
+  },
+  {
+    "title": "Fulbright Foreign Student Program",
+    "official_url": "https://foreign.fulbrightonline.org/",
+    "country": "United States",
+    "notes": "U.S. government flagship international educational exchange program."
+  },
+  {
+    "title": "Chinese Government Scholarship (CSC)",
+    "official_url": "https://www.campuschina.org/",
+    "country": "China",
+    "notes": "Full and partial scholarships for undergraduate, master's and doctoral degrees."
+  },
+  {
+    "title": "Russian Government State Scholarship (Education in Russia)",
+    "official_url": "https://education-in-russia.com/",
+    "country": "Russia",
+    "notes": "Quota scholarship by the Ministry of Science and Higher Education of Russia."
+  },
+  {
+    "title": "Islamic Development Bank (IsDB) Scholarship Programme",
+    "official_url": "https://www.isdb.org/scholarships",
+    "country": "International",
+    "notes": "Fully funded scholarships for students from IsDB member countries including Yemen."
+  },
+  {
+    "title": "Eiffel Excellence Scholarship Program (Campus France)",
+    "official_url": "https://www.campusfrance.org/en/the-eiffel-scholarship-program-of-excellence",
+    "country": "France",
+    "notes": "French Ministry for Europe and Foreign Affairs scholarship for master's and PhD degrees."
+  }
+]
