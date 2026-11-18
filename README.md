@@ -115,6 +115,19 @@ python integrations/telegram_watcher.py --limit 20
 ```
 *(يستخرج الروابط الرسمية فقط ويمررها إلى `ingest()`، ولا يأخذ أي معلومة من نص المنشور تفادياً لأي معلومات غير دقيقة).*
 
+### 6. تشغيل الواجهة الأمامية (ASAAS UI + FastAPI)
+```bash
+# 1. بناء الواجهة الأمامية (React + Vite + TypeScript + asaas-ui):
+cd frontend
+npm install
+npm run build
+cd ..
+
+# 2. تشغيل خادم FastAPI (يخدم الـ API والواجهة المبنية معاً):
+python -m uvicorn api.main:app --host 127.0.0.1 --port 8001
+# ثم افتح المتصفح على: http://127.0.0.1:8001
+```
+
 ---
 
 ## 🧪 تشغيل الاختبارات الشاملة
