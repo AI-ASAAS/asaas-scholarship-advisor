@@ -10,10 +10,10 @@ export function Layout({ children }: { children: ReactNode }) {
   const brand = (
     <Link to="/" className="brand">
       <span className="brand__mark" aria-hidden="true" />
-      <span>
+      <span className="brand__text">
         <span className="brand__name">
           <Swash>{t('brandName')}</Swash>
-        </span>
+        </span>{' '}
         <span className="brand__tag hide-mobile">{t('brandTag')}</span>
       </span>
     </Link>

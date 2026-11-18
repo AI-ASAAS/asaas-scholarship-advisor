@@ -12,6 +12,13 @@ body {
   vertical-align: middle;
 }
 
+.brand__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .site-nav a {
   gap: 8px;
 }
