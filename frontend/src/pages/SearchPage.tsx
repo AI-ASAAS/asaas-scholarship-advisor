@@ -16,8 +16,33 @@ import { ApiKeysModal } from '../components/ApiKeysModal';
 import { api, safeHref, type ExternalSearchOutput, type SystemStatus } from '../lib/api';
 import { useLang } from '../lib/i18n';
 
+const TARGET_COUNTRIES = [
+  { value: 'Germany', ar: 'ألمانيا', en: 'Germany' },
+  { value: 'Turkey', ar: 'تركيا', en: 'Turkey' },
+  { value: 'United Kingdom', ar: 'بريطانيا', en: 'United Kingdom' },
+  { value: 'United States', ar: 'الولايات المتحدة', en: 'United States' },
+  { value: 'Hungary', ar: 'المجر', en: 'Hungary' },
+  { value: 'France', ar: 'فرنسا', en: 'France' },
+  { value: 'China', ar: 'الصين', en: 'China' },
+  { value: 'Russia', ar: 'روسيا', en: 'Russia' },
+  { value: 'Romania', ar: 'رومانيا', en: 'Romania' },
+  { value: 'Malaysia', ar: 'ماليزيا', en: 'Malaysia' },
+  { value: 'Japan', ar: 'اليابان', en: 'Japan' },
+  { value: 'South Korea', ar: 'كوريا الجنوبية', en: 'South Korea' },
+  { value: 'Canada', ar: 'كندا', en: 'Canada' },
+  { value: 'Australia', ar: 'أستراليا', en: 'Australia' },
+  { value: 'Netherlands', ar: 'هولندا', en: 'Netherlands' },
+  { value: 'Italy', ar: 'إيطاليا', en: 'Italy' },
+  { value: 'Sweden', ar: 'السويد', en: 'Sweden' },
+  { value: 'Saudi Arabia', ar: 'السعودية', en: 'Saudi Arabia' },
+  { value: 'Qatar', ar: 'قطر', en: 'Qatar' },
+  { value: 'United Arab Emirates', ar: 'الإمارات', en: 'United Arab Emirates' },
+  { value: 'Egypt', ar: 'مصر', en: 'Egypt' },
+  { value: 'Jordan', ar: 'الأردن', en: 'Jordan' },
+];
+
 export default function SearchPage() {
-  const { t } = useLang();
+  const { lang, t } = useLang();
   const toast = useToast();
 
   const [major, setMajor] = useState('Computer Science');
@@ -142,12 +167,16 @@ export default function SearchPage() {
 
           <Field label={t('fieldCountry')}>
             {(id) => (
-              <TextInput
-                id={id}
-                value={targetCountry}
-                placeholder={t('fieldCountryPh')}
-                onChange={(e) => setTargetCountry(e.target.value)}
-              />
+              <Select id={id} value={targetCountry} onChange={(e) => setTargetCountry(e.target.value)}>
+                <option value="">
+                  {lang === 'en' ? 'Any Country (All Destinations)' : 'أي دولة (جميع الوجهات)'}
+                </option>
+                {TARGET_COUNTRIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {lang === 'en' ? c.en : `${c.ar} (${c.en})`}
+                  </option>
+                ))}
+              </Select>
             )}
           </Field>
 
