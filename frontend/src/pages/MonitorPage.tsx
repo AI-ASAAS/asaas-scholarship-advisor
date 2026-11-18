@@ -49,11 +49,11 @@ export default function MonitorPage() {
       const summary = await api.runMonitor();
       setLastSummary(summary);
       toast(
-        `${t('monitorSuccess')} (${summary.total_published_checked} منحة | ${summary.content_modifications_found} تغيير)`,
+        `اكتمل الفحص: ${summary.total_published_checked} منحة (${summary.content_modifications_found} تغيير).`,
       );
       await loadData();
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Monitor failed', 'error');
+      toast(err instanceof Error ? err.message : 'تعذّر إتمام الفحص، حاول مجدداً.', 'error');
     } finally {
       setRunning(false);
     }
@@ -104,8 +104,8 @@ export default function MonitorPage() {
           <div className="list">
             <div className="row">
               <div className="row__main">
-                <div className="row__title">LLM Extraction (`LLM_API_KEY`)</div>
-                <div className="row__meta">Model: {sysStatus.llm_model}</div>
+                <div className="row__title">الاستخلاص بالذكاء الاصطناعي</div>
+                <div className="row__meta">النموذج: {sysStatus.llm_model}</div>
               </div>
               <span className={sysStatus.llm_configured ? 'pill pill--paid' : 'pill pill--partial'}>
                 <Icon name={sysStatus.llm_configured ? 'checkCircle' : 'alert'} />
@@ -115,9 +115,9 @@ export default function MonitorPage() {
 
             <div className="row">
               <div className="row__main">
-                <div className="row__title">ReAct Search (`TAVILY_API_KEY` / `SERPER_API_KEY`)</div>
+                <div className="row__title">البحث الخارجي العميق</div>
                 <div className="row__meta">
-                  Provider: {sysStatus.search_provider ?? 'Not configured'}
+                  المزوّد: {sysStatus.search_provider ?? 'غير مضبوط'}
                 </div>
               </div>
               <span className={sysStatus.search_configured ? 'pill pill--paid' : 'pill pill--partial'}>
@@ -128,8 +128,8 @@ export default function MonitorPage() {
 
             <div className="row">
               <div className="row__main">
-                <div className="row__title">Telegram Watcher (`TELEGRAM_API_ID` / `HASH`)</div>
-                <div className="row__meta">Telethon live channel reader</div>
+                <div className="row__title">راصد قنوات التيليجرام</div>
+                <div className="row__meta">قراءة تلقائية لروابط القنوات المعتمدة</div>
               </div>
               <span className={sysStatus.telegram_configured ? 'pill pill--paid' : 'pill pill--partial'}>
                 <Icon name={sysStatus.telegram_configured ? 'checkCircle' : 'alert'} />

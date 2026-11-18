@@ -120,7 +120,7 @@ export default function AdminPage() {
       setSelected(updated);
       await loadGrants(tab);
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Error', 'error');
+      toast(err instanceof Error ? err.message : 'تعذّر اعتماد المنحة، حاول مجدداً.', 'error');
     } finally {
       setPublishingId(null);
     }

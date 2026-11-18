@@ -151,7 +151,7 @@ def test_react_agent_strictly_respects_5_step_limit():
     assert output.steps_taken == 5
     assert len(output.trace) == 5
     assert output.results == []
-    assert "No verified official scholarships matched" in output.reason
+    assert "لم تُعثر على منح رسمية مطابقة" in output.reason
 
 
 def test_react_agent_returns_empty_list_with_reason_when_no_results():
@@ -168,4 +168,4 @@ def test_react_agent_returns_empty_list_with_reason_when_no_results():
 
     assert output.results == []
     assert output.steps_taken == 1
-    assert "no candidate scholarships" in output.reason.lower()
+    assert "لا توجد نتائج مطابقة" in output.reason

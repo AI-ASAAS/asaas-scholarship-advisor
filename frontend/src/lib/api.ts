@@ -149,7 +149,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    let message = `Request failed (${res.status})`;
+    let message = `تعذّر تنفيذ الطلب (رمز ${res.status}).`;
     try {
       const body = (await res.json()) as { message?: string; detail?: string };
       message = body.message || body.detail || message;

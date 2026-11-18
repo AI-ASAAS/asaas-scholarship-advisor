@@ -232,7 +232,7 @@ export default function SearchPage() {
                     <div className="quote-box">“{item.evidence_quote}”</div>
                     {item.yemen_evidence && (
                       <div className="subtle">
-                        <strong>Yemen eligibility evidence:</strong> “{item.yemen_evidence}”
+                        <strong>{lang === 'en' ? 'Yemen eligibility:' : 'دليل قبول اليمنيين:'}</strong> “{item.yemen_evidence}”
                       </div>
                     )}
                     <div className="cluster">

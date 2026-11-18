@@ -229,19 +229,19 @@ def find_profile_match_evidence(text: str, profile: StudentProfile) -> Tuple[Opt
             broad_field_quote = sentence
 
     if major_quote and is_quote_in_text(major_quote, text):
-        reason = f"Matches requested major '{profile.major}'"
+        reason = f"يطابق تخصص «{profile.major}»"
         if degree_quote:
-            reason += f" and degree level '{profile.degree_level}'"
+            reason += f" ودرجة «{profile.degree_level}»"
         return reason, major_quote
 
     if broad_field_quote and is_quote_in_text(broad_field_quote, text):
-        reason = f"Open to all academic fields (covers '{profile.major}')"
+        reason = f"مفتوحة لجميع التخصصات (تشمل «{profile.major}»)"
         if degree_quote:
-            reason += f" for '{profile.degree_level}'"
+            reason += f" لدرجة «{profile.degree_level}»"
         return reason, broad_field_quote
 
     if degree_quote and is_quote_in_text(degree_quote, text):
-        return f"Matches requested degree level '{profile.degree_level}'", degree_quote
+        return f"يطابق درجة «{profile.degree_level}»", degree_quote
 
     return None, None
 
@@ -268,12 +268,13 @@ class ExternalSearchAgent:
     def _build_query(self, profile: StudentProfile) -> str:
         """Construct a targeted official scholarship search query from the student profile."""
         parts = [
-            f"official {profile.degree_level} scholarship",
+            f"{profile.degree_level} scholarship",
             profile.major,
-            "international students Yemen",
+            "international students",
         ]
         if profile.target_country:
             parts.append(profile.target_country)
+        parts.append("site:.org OR site:.gov OR site:.edu")
         return " ".join(parts)
 
     def run(self, profile: StudentProfile, max_verified_results: int = 3) -> SearchAgentOutput:
@@ -287,18 +288,15 @@ class ExternalSearchAgent:
         # ---- STEP 1: Formulate query & run external search ----
         step_num += 1
         query = self._build_query(profile)
-        thought_1 = (
-            f"I need to find official {profile.degree_level} scholarships in {profile.major}"
-            + (f" in {profile.target_country}" if profile.target_country else "")
-            + " that accept Yemeni students. I will search using the search tool first."
-        )
+        country_suffix = f" في {profile.target_country}" if profile.target_country else ""
+        thought_1 = f"البحث عن منح رسمية لدرجة {profile.degree_level} في {profile.major}{country_suffix}."
         logger.info("[Step %d/%d] Thought: %s", step_num, self.max_steps, thought_1)
 
         try:
-            candidates = self.search_fn(query, 5)
-            obs_1 = f"Search returned {len(candidates)} candidate URLs."
+            candidates = self.search_fn(query, 8)
+            obs_1 = f"تم العثور على {len(candidates)} رابطاً مرشحاً للفحص."
         except Exception as exc:
-            obs_1 = f"Search tool error: {exc}"
+            obs_1 = "تعذّر الاتصال بمحرك البحث."
             trace.append(
                 ReActStep(
                     step_number=step_num,
@@ -311,7 +309,7 @@ class ExternalSearchAgent:
             return SearchAgentOutput(
                 student_profile=profile,
                 results=[],
-                reason=f"External search failed: {exc}",
+                reason="تعذّر الاتصال بمحرك البحث؛ تحقق من صحة مفتاح البحث وحاول مجدداً.",
                 steps_taken=step_num,
                 trace=trace,
             )
@@ -330,7 +328,7 @@ class ExternalSearchAgent:
             return SearchAgentOutput(
                 student_profile=profile,
                 results=[],
-                reason="Search engine returned no candidate scholarships for the given profile.",
+                reason="لا توجد نتائج مطابقة؛ جرّب توسيع التخصص أو اختيار (أي دولة).",
                 steps_taken=step_num,
                 trace=trace,
             )
@@ -344,22 +342,18 @@ class ExternalSearchAgent:
                 break
 
             url = candidate.get("url", "").strip()
-            title = candidate.get("title", "Untitled Scholarship").strip()
+            title = candidate.get("title", "منحة دراسية").strip()
             if not url or url in visited_urls:
                 continue
 
             step_num += 1
-            thought = (
-                f"Candidate '{title}' ({url}) returned by search. "
-                "I must validate it is an official live domain, fetch its page text, "
-                "verify profile match, and explicitly check Yemeni student eligibility."
-            )
+            thought = f"فحص الرابط الرسمي والتحقق من الشروط: {title}"
             logger.info("[Step %d/%d] Thought: %s", step_num, self.max_steps, thought)
 
             # Action A: Validate official URL
             is_valid, reasons = self.validate_fn(url, title)
             if not is_valid:
-                obs = f"REJECTED by validate_official_url: {'; '.join(reasons)}"
+                obs = "مرفوض: رابط غير رسمي أو غير متاح."
                 logger.info("[Step %d/%d] Observation: %s", step_num, self.max_steps, obs)
                 trace.append(
                     ReActStep(
@@ -379,8 +373,8 @@ class ExternalSearchAgent:
                 page_text, _ = self.fetch_fn(url)
                 visited_urls.add(url)
             except Exception as exc:
-                obs = f"Failed to fetch page content from {url}: {exc}"
-                logger.warning("[Step %d/%d] Observation: %s", step_num, self.max_steps, obs)
+                obs = "تعذّر فتح الصفحة الرسمية."
+                logger.warning("[Step %d/%d] Observation: %s (%s)", step_num, self.max_steps, obs, exc)
                 trace.append(
                     ReActStep(
                         step_number=step_num,
@@ -395,7 +389,7 @@ class ExternalSearchAgent:
             # Action C: Check Yemeni eligibility strictly from fetched page text
             yemen_status, yemen_quote = check_yemen_eligibility(page_text)
             if yemen_status == "no":
-                obs = f"REJECTED: Page explicitly excludes Yemeni students. Quote: '{yemen_quote}'"
+                obs = "مرفوض: المنحة لا تشمل الطلاب اليمنيين."
                 logger.info("[Step %d/%d] Observation: %s", step_num, self.max_steps, obs)
                 trace.append(
                     ReActStep(
@@ -411,10 +405,7 @@ class ExternalSearchAgent:
             # Action D: Verify profile match with verbatim evidence quote
             match_reason, match_quote = find_profile_match_evidence(page_text, profile)
             if not match_reason or not match_quote:
-                obs = (
-                    f"SKIPPED: Official page was visited, but contained no grounded text matching "
-                    f"major '{profile.major}' or degree '{profile.degree_level}'."
-                )
+                obs = "مُتخطّى: الصفحة لا تذكر التخصص أو الدرجة صراحةً."
                 logger.info("[Step %d/%d] Observation: %s", step_num, self.max_steps, obs)
                 trace.append(
                     ReActStep(
@@ -438,10 +429,7 @@ class ExternalSearchAgent:
                     yemen_evidence=yemen_quote,
                 )
                 verified_results.append(verified_item)
-                obs = (
-                    f"VERIFIED & ACCEPTED: '{title}' | accepts_yemeni={yemen_status} | "
-                    f"match='{match_reason}'"
-                )
+                obs = f"موثّق ومُعتمد: {title}"
                 logger.info("[Step %d/%d] Observation: %s", step_num, self.max_steps, obs)
                 trace.append(
                     ReActStep(
@@ -454,15 +442,9 @@ class ExternalSearchAgent:
                 )
 
         if verified_results:
-            summary_reason = (
-                f"Found {len(verified_results)} verified official scholarship(s) matching "
-                f"{profile.degree_level} in {profile.major} within {step_num} steps."
-            )
+            summary_reason = f"تم العثور على {len(verified_results)} منحة رسمية موثّقة خلال {step_num} خطوات."
         else:
-            summary_reason = (
-                f"No verified official scholarships matched the student profile after {step_num} steps. "
-                "All candidates were either non-official, unreachable, excluded Yemen, or lacked grounded match evidence."
-            )
+            summary_reason = f"لم تُعثر على منح رسمية مطابقة بعد {step_num} خطوات؛ جرّب توسيع التخصص أو الدولة."
 
         return SearchAgentOutput(
             student_profile=profile,
