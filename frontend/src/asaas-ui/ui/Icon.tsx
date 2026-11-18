@@ -178,9 +178,16 @@ export type IconName = keyof typeof paths;
  */
 const DIRECTIONAL = new Set<IconName>(['chevronLeft', 'chevronRight']);
 
-export function Icon({ name, className, ...props }: { name: IconName } & SVGProps<SVGSVGElement>) {
+export function Icon({
+  name,
+  size = 18,
+  className,
+  ...props
+}: { name: IconName; size?: number } & SVGProps<SVGSVGElement>) {
   return (
     <svg
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -188,7 +195,7 @@ export function Icon({ name, className, ...props }: { name: IconName } & SVGProp
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
-      className={cx(DIRECTIONAL.has(name) && 'icon--dir', className)}
+      className={cx('icon', DIRECTIONAL.has(name) && 'icon--dir', className)}
       {...props}
     >
       {paths[name]}

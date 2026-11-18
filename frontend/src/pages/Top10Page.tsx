@@ -89,7 +89,7 @@ export default function Top10Page() {
       </div>
 
       {sysStatus && (
-        <div className="grid grid--stats">
+        <div className="grid grid--stats grid--stats--4">
           <Stat
             label={t('statPublished')}
             icon="checkCircle"
@@ -117,7 +117,8 @@ export default function Top10Page() {
         </div>
       )}
 
-      <div>
+      <div className="search-box">
+        <Icon name="search" size={17} className="search-box__icon" />
         <TextInput
           type="search"
           placeholder={t('filterPlaceholder')}
@@ -148,10 +149,8 @@ export default function Top10Page() {
               <Glass key={grant.id} className="grant-card">
                 <div className="grant-card__head">
                   <h2 className="grant-card__title">
-                    <span className="pill pill--neutral" style={{ marginInlineEnd: 8 }}>
-                      <span className="num">#{idx + 1}</span>
-                    </span>
-                    {grant.title}
+                    <span className="grant-card__rank num">#{idx + 1}</span>
+                    <span>{grant.title}</span>
                   </h2>
                 </div>
 
@@ -183,14 +182,14 @@ export default function Top10Page() {
                 {grant.funding && <div className="grant-card__funding">{grant.funding}</div>}
 
                 <div className="grant-card__foot">
-                  <div className="subtle">
-                    <Icon name="calendar" />{' '}
-                    <span>{t('deadlineLabel')}: </span>
+                  <div className="grant-deadline">
+                    <Icon name="calendar" size={15} />
+                    <span>{t('deadlineLabel')}:</span>
                     <strong className="num" style={{ color: 'var(--text)' }}>
                       {grant.deadline ? formatDate(grant.deadline) : t('rollingDeadline')}
                     </strong>
                     {days !== null && days >= 0 && (
-                      <span style={{ marginInlineStart: 6 }}>
+                      <span>
                         (<span className="num">{days}</span> {t('daysLeft')})
                       </span>
                     )}

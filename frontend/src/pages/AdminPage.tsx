@@ -298,7 +298,7 @@ export default function AdminPage() {
               <div key={grant.id} className="row row--stack">
                 <div className="row__main">
                   <div className="row__title">{grant.title}</div>
-                  <div className="row__meta">
+                  <div className="row__meta row__meta--wrap">
                     <span
                       className={
                         grant.status === 'published'
