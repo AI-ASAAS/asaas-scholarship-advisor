@@ -41,10 +41,24 @@ export interface GrantListResponse {
 export interface SystemStatus {
   llm_configured: boolean;
   llm_model: string;
+  llm_key_hint: string | null;
   search_configured: boolean;
   search_provider: string | null;
+  tavily_key_hint: string | null;
+  serper_key_hint: string | null;
   telegram_configured: boolean;
+  telegram_channels: string;
   counts: GrantCounts;
+}
+
+export interface UpdateKeysPayload {
+  llm_api_key?: string;
+  llm_model?: string;
+  tavily_api_key?: string;
+  serper_api_key?: string;
+  telegram_api_id?: string;
+  telegram_api_hash?: string;
+  telegram_channels?: string;
 }
 
 export interface ReActStep {
@@ -149,6 +163,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getSystemStatus: () => request<SystemStatus>('/api/system/status'),
+  updateKeys: (payload: UpdateKeysPayload) =>
+    request<SystemStatus>('/api/system/keys', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   getTop10: () => request<Grant[]>('/api/grants/top10'),
   listGrants: (status?: string) =>
     request<GrantListResponse>(status && status !== 'all' ? `/api/grants?status=${encodeURIComponent(status)}` : '/api/grants'),

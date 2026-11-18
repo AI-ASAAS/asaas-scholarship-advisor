@@ -11,6 +11,7 @@ import {
   useToast,
 } from '../asaas-ui';
 import { api, type MonitorSummary, type SystemStatus, type UpdateLogItem } from '../lib/api';
+import { ApiKeysForm } from '../components/ApiKeysForm';
 import { useLang } from '../lib/i18n';
 
 export default function MonitorPage() {
@@ -138,6 +139,10 @@ export default function MonitorPage() {
           </div>
         </Card>
       )}
+
+      <Card title={t('apiKeysTitle')} icon="vault">
+        <ApiKeysForm status={sysStatus} onSaved={(updated) => setSysStatus(updated)} />
+      </Card>
 
       <Card title={t('logsCardTitle')} icon="list">
         {loading && <Skeleton height={56} count={4} />}

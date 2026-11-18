@@ -33,9 +33,10 @@ from api.schemas import (
     IngestRequest,
     SystemStatusResponse,
     TelegramProcessRequest,
+    UpdateKeysRequest,
     UpdateLogResponse,
 )
-from core.config import settings
+from core.config import ENV_PATH, settings
 from core.db import get_db, init_db
 from core.models import Grant, GrantStatus, UpdateLog
 from core.repository import get_grant_by_id, get_grant_by_url, get_top_10_grants, publish
@@ -126,11 +127,29 @@ def _get_counts(db) -> GrantCountsResponse:
 
 
 # ---------------------------------------------------------------------------
-# System Status
+# System Status & Manual API Keys Configuration
 # ---------------------------------------------------------------------------
 
-@app.get("/api/system/status", response_model=SystemStatusResponse)
-def system_status() -> SystemStatusResponse:
+def _mask_key(value: Optional[str]) -> Optional[str]:
+    """Return a safe masked preview (never the full secret key)."""
+    if not value or not value.strip():
+        return None
+    v = value.strip()
+    if len(v) <= 8:
+        return "••••"
+    return f"{v[:4]}••••{v[-4:]}"
+
+
+def _persist_env_key(key: str, value: str) -> None:
+    """Safely persist a single key to local .env without touching git-tracked files."""
+    from dotenv import set_key
+
+    if not ENV_PATH.exists():
+        ENV_PATH.write_text("", encoding="utf-8")
+    set_key(str(ENV_PATH), key, value, quote_mode="never")
+
+
+def _build_system_status() -> SystemStatusResponse:
     search_provider = None
     if settings.TAVILY_API_KEY:
         search_provider = "Tavily"
@@ -143,11 +162,47 @@ def system_status() -> SystemStatusResponse:
     return SystemStatusResponse(
         llm_configured=bool(settings.LLM_API_KEY),
         llm_model=settings.LLM_MODEL,
+        llm_key_hint=_mask_key(settings.LLM_API_KEY),
         search_configured=bool(search_provider),
         search_provider=search_provider,
+        tavily_key_hint=_mask_key(settings.TAVILY_API_KEY),
+        serper_key_hint=_mask_key(settings.SERPER_API_KEY),
         telegram_configured=bool(settings.TELEGRAM_API_ID and settings.TELEGRAM_API_HASH),
+        telegram_channels=settings.TELEGRAM_CHANNELS_RAW or "",
         counts=counts,
     )
+
+
+@app.get("/api/system/status", response_model=SystemStatusResponse)
+def system_status() -> SystemStatusResponse:
+    return _build_system_status()
+
+
+@app.post("/api/system/keys", response_model=SystemStatusResponse)
+def api_update_keys(payload: UpdateKeysRequest) -> SystemStatusResponse:
+    """Manually configure API keys from the UI: applies immediately in memory and saves to .env."""
+    field_map = {
+        "llm_api_key": ("LLM_API_KEY", "LLM_API_KEY"),
+        "llm_model": ("LLM_MODEL", "LLM_MODEL"),
+        "tavily_api_key": ("TAVILY_API_KEY", "TAVILY_API_KEY"),
+        "serper_api_key": ("SERPER_API_KEY", "SERPER_API_KEY"),
+        "telegram_api_id": ("TELEGRAM_API_ID", "TELEGRAM_API_ID"),
+        "telegram_api_hash": ("TELEGRAM_API_HASH", "TELEGRAM_API_HASH"),
+        "telegram_channels": ("TELEGRAM_CHANNELS_RAW", "TELEGRAM_CHANNELS"),
+    }
+
+    for field_name, (attr_name, env_key) in field_map.items():
+        val = getattr(payload, field_name)
+        if val is None:
+            continue
+        cleaned = val.strip()
+        # Allow empty string to clear a key (except llm_model which falls back to default)
+        if field_name == "llm_model" and not cleaned:
+            continue
+        setattr(settings, attr_name, cleaned or None if field_name != "telegram_channels" else cleaned)
+        _persist_env_key(env_key, cleaned)
+
+    return _build_system_status()
 
 
 # ---------------------------------------------------------------------------

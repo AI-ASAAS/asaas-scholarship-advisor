@@ -40,3 +40,39 @@ def test_api_telegram_dry_run_filters_and_deduplicates():
     data = res.json()
     assert data["trusted_urls_found"] == 1
     assert len(data["skipped_untrusted"]) == 2
+
+
+def test_api_update_keys_activates_live_and_masks_secrets(monkeypatch, tmp_path):
+    """Verify POST /api/system/keys applies keys immediately and returns only masked previews."""
+    import api.main as api_main
+    from core.config import settings
+
+    temp_env = tmp_path / ".env"
+    monkeypatch.setattr(api_main, "ENV_PATH", temp_env)
+    orig_llm = settings.LLM_API_KEY
+    orig_tavily = settings.TAVILY_API_KEY
+    orig_model = settings.LLM_MODEL
+
+    try:
+        res = client.post(
+            "/api/system/keys",
+            json={
+                "llm_api_key": "AIzaSyTestSecretKey9876",
+                "llm_model": "gemini-2.0-flash",
+                "tavily_api_key": "tvly-TestSearchKey5432",
+            },
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["llm_configured"] is True
+        assert body["search_configured"] is True
+        assert body["search_provider"] == "Tavily"
+        assert body["llm_key_hint"] == "AIza••••9876"
+        assert body["tavily_key_hint"] == "tvly••••5432"
+        # Full secret must NEVER be leaked in API response
+        assert "AIzaSyTestSecretKey9876" not in res.text
+        assert "tvly-TestSearchKey5432" not in res.text
+    finally:
+        settings.LLM_API_KEY = orig_llm
+        settings.TAVILY_API_KEY = orig_tavily
+        settings.LLM_MODEL = orig_model

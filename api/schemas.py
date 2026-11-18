@@ -69,10 +69,24 @@ class TelegramProcessRequest(BaseModel):
     )
 
 
+class UpdateKeysRequest(BaseModel):
+    llm_api_key: Optional[str] = Field(default=None, max_length=300)
+    llm_model: Optional[str] = Field(default=None, max_length=120)
+    tavily_api_key: Optional[str] = Field(default=None, max_length=300)
+    serper_api_key: Optional[str] = Field(default=None, max_length=300)
+    telegram_api_id: Optional[str] = Field(default=None, max_length=60)
+    telegram_api_hash: Optional[str] = Field(default=None, max_length=200)
+    telegram_channels: Optional[str] = Field(default=None, max_length=500)
+
+
 class SystemStatusResponse(BaseModel):
     llm_configured: bool
     llm_model: str
+    llm_key_hint: Optional[str] = None
     search_configured: bool
     search_provider: Optional[str] = None
+    tavily_key_hint: Optional[str] = None
+    serper_key_hint: Optional[str] = None
     telegram_configured: bool
+    telegram_channels: str = ""
     counts: GrantCountsResponse

@@ -15,6 +15,7 @@ import {
   formatDate,
   useToast,
 } from '../asaas-ui';
+import { ApiKeysModal } from '../components/ApiKeysModal';
 import { GrantModal } from '../components/GrantModal';
 import {
   api,
@@ -65,6 +66,7 @@ export default function AdminPage() {
 
   // System readiness
   const [sysStatus, setSysStatus] = useState<SystemStatus | null>(null);
+  const [showKeysModal, setShowKeysModal] = useState(false);
 
   const loadGrants = useCallback(async (statusFilter: StatusTab) => {
     setLoadingList(true);
@@ -151,15 +153,23 @@ export default function AdminPage() {
             {t('adminSubtitle')}
           </p>
         </div>
+        <Button variant="glass" icon="vault" onClick={() => setShowKeysModal(true)}>
+          {t('apiKeysBtn')}
+        </Button>
       </div>
 
       <div className="grid grid--halves">
         {/* Task 2: Agentic URL Scraper */}
         <Card title={t('ingestCardTitle')} icon="sparkle">
           {sysStatus && !sysStatus.llm_configured && (
-            <div className="notice-banner" style={{ marginBottom: 14 }}>
-              <Icon name="alert" />
-              <span>{t('ingestKeyNotice')}</span>
+            <div className="notice-banner" style={{ marginBottom: 14, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <Icon name="alert" />
+                <span>{t('ingestKeyNotice')}</span>
+              </span>
+              <Button size="sm" variant="primary" icon="vault" onClick={() => setShowKeysModal(true)}>
+                {t('apiKeysBtn')}
+              </Button>
             </div>
           )}
           <form className="form" onSubmit={handleIngest}>
@@ -350,6 +360,14 @@ export default function AdminPage() {
           onClose={() => setSelected(null)}
           onPublish={(id) => void handlePublish(id)}
           publishing={publishingId === selected.id}
+        />
+      )}
+
+      {showKeysModal && (
+        <ApiKeysModal
+          status={sysStatus}
+          onClose={() => setShowKeysModal(false)}
+          onSaved={(updated) => setSysStatus(updated)}
         />
       )}
     </div>

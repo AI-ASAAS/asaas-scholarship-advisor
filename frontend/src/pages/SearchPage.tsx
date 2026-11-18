@@ -12,6 +12,7 @@ import {
   TextInput,
   useToast,
 } from '../asaas-ui';
+import { ApiKeysModal } from '../components/ApiKeysModal';
 import { api, safeHref, type ExternalSearchOutput, type SystemStatus } from '../lib/api';
 import { useLang } from '../lib/i18n';
 
@@ -26,6 +27,7 @@ export default function SearchPage() {
   const [error, setError] = useState<unknown>(null);
   const [output, setOutput] = useState<ExternalSearchOutput | null>(null);
   const [sysStatus, setSysStatus] = useState<SystemStatus | null>(null);
+  const [showKeysModal, setShowKeysModal] = useState(false);
 
   useEffect(() => {
     void api.getSystemStatus().then(setSysStatus).catch(() => null);
@@ -62,12 +64,24 @@ export default function SearchPage() {
             {t('searchSubtitle')}
           </p>
         </div>
+        <Button variant="glass" icon="vault" onClick={() => setShowKeysModal(true)}>
+          {t('apiKeysBtn')}
+        </Button>
       </div>
 
       {sysStatus && !sysStatus.search_configured && (
-        <div className="notice-banner" role="status">
-          <Icon name="alert" />
-          <span>{t('searchKeyMissing')}</span>
+        <div
+          className="notice-banner"
+          role="status"
+          style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}
+        >
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <Icon name="alert" />
+            <span>{t('searchKeyMissing')}</span>
+          </span>
+          <Button size="sm" variant="primary" icon="vault" onClick={() => setShowKeysModal(true)}>
+            {t('apiKeysBtn')}
+          </Button>
         </div>
       )}
 
@@ -199,6 +213,13 @@ export default function SearchPage() {
             </div>
           </Card>
         </div>
+      )}
+      {showKeysModal && (
+        <ApiKeysModal
+          status={sysStatus}
+          onClose={() => setShowKeysModal(false)}
+          onSaved={(updated) => setSysStatus(updated)}
+        />
       )}
     </div>
   );
