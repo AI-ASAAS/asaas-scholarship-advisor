@@ -64,19 +64,19 @@ export function Layout({ children }: { children: ReactNode }) {
       <TabBar>
         <NavLink to="/" end>
           <Icon name="sparkle" />
-          <span>{t('navTop10')}</span>
+          <span>{t('tabNavTop10')}</span>
         </NavLink>
         <NavLink to="/search">
           <Icon name="search" />
-          <span>{t('navSearch')}</span>
+          <span>{t('tabNavSearch')}</span>
         </NavLink>
         <NavLink to="/admin">
           <Icon name="briefcase" />
-          <span>{t('navAdmin')}</span>
+          <span>{t('tabNavAdmin')}</span>
         </NavLink>
         <NavLink to="/monitor">
           <Icon name="clock" />
-          <span>{t('navMonitor')}</span>
+          <span>{t('tabNavMonitor')}</span>
         </NavLink>
       </TabBar>
     </>

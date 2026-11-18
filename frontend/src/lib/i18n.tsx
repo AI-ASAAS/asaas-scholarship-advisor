@@ -8,6 +8,10 @@ const ar = {
   navSearch: 'البحث العميق',
   navAdmin: 'الإدارة والاستخلاص',
   navMonitor: 'المراقب والتحديثات',
+  tabNavTop10: 'المنح',
+  tabNavSearch: 'البحث',
+  tabNavAdmin: 'الإدارة',
+  tabNavMonitor: 'المراقب',
   themeToggle: 'تبديل الوضع',
   langToggle: 'English',
 
@@ -84,7 +88,7 @@ const ar = {
   telegramCardTitle: 'راصد قنوات التيليجرام الإبداعي (المرحلة 8)',
   telegramHint: 'ألصق منشوراً أو أكثر من قنوات المنح؛ سيستخرج النظام الروابط الرسمية فقط، يرفض روابط t.me والمجمّعات، ويزيل المكرر.',
   btnTelegramScan: 'فحص المنشورات واستخراج الروابط الرسمية',
-  telegramSampleBtn: 'تعبئة منشور تجريبي',
+  telegramSampleBtn: 'مثال تجريبي',
 
   // Monitor Page
   monitorTitle: 'مراقب التحديثات والمواعيد (مهمة 9)',
@@ -113,6 +117,10 @@ const en: Record<DictKey, string> = {
   navSearch: 'Deep Search',
   navAdmin: 'Admin & Scraper',
   navMonitor: 'Monitor & Logs',
+  tabNavTop10: 'Grants',
+  tabNavSearch: 'Search',
+  tabNavAdmin: 'Admin',
+  tabNavMonitor: 'Monitor',
   themeToggle: 'Toggle theme',
   langToggle: 'العربية',
 
