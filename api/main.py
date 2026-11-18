@@ -54,6 +54,12 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Auto-seed verified Top 10 grants on fresh cloud deployments (empty DB)
+    with get_db() as db:
+        if db.query(Grant).count() == 0:
+            from seed.seed_db import seed_database
+            logger.info("Empty database detected on startup — seeding verified Top 10 grants...")
+            seed_database(publish_all=True)
     yield
 
 
