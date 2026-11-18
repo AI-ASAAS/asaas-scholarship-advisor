@@ -41,6 +41,8 @@ class GrantListResponse(BaseModel):
 
 class IngestRequest(BaseModel):
     official_url: str = Field(..., min_length=8, max_length=1000)
+    llm_api_key: Optional[str] = Field(default=None, max_length=300)
+    llm_model: Optional[str] = Field(default=None, max_length=120)
 
 
 class ExternalSearchRequest(BaseModel):
@@ -48,6 +50,8 @@ class ExternalSearchRequest(BaseModel):
     degree_level: str = Field(..., min_length=2, max_length=60)
     target_country: Optional[str] = Field(default=None, max_length=80)
     max_steps: int = Field(default=5, ge=1, le=5)
+    tavily_api_key: Optional[str] = Field(default=None, max_length=300)
+    serper_api_key: Optional[str] = Field(default=None, max_length=300)
 
 
 class UpdateLogResponse(BaseModel):

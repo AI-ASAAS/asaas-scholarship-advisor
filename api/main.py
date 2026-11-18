@@ -262,10 +262,19 @@ def api_publish_grant(grant_id: int) -> GrantResponse:
 
 @app.post("/api/agents/ingest", response_model=GrantResponse)
 async def api_ingest_url(payload: IngestRequest) -> GrantResponse:
+    if payload.llm_api_key and payload.llm_api_key.strip():
+        cleaned_key = payload.llm_api_key.strip()
+        settings.LLM_API_KEY = cleaned_key
+        _persist_env_key("LLM_API_KEY", cleaned_key)
+    if payload.llm_model and payload.llm_model.strip():
+        cleaned_model = payload.llm_model.strip()
+        settings.LLM_MODEL = cleaned_model
+        _persist_env_key("LLM_MODEL", cleaned_model)
+
     if not settings.LLM_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="مفتاح LLM_API_KEY غير مضبوط في ملف .env؛ أضف المفتاح لتشغيل الاستخلاص الحي.",
+            detail="يرجى إدخال مفتاح الذكاء الاصطناعي (LLM API Key) لتفعيل الاستخلاص.",
         )
     try:
         grant = await asyncio.to_thread(ingest, payload.official_url.strip())
@@ -286,10 +295,19 @@ async def api_ingest_url(payload: IngestRequest) -> GrantResponse:
 
 @app.post("/api/agents/search")
 async def api_external_search(payload: ExternalSearchRequest) -> Dict[str, Any]:
+    if payload.tavily_api_key and payload.tavily_api_key.strip():
+        cleaned_tavily = payload.tavily_api_key.strip()
+        settings.TAVILY_API_KEY = cleaned_tavily
+        _persist_env_key("TAVILY_API_KEY", cleaned_tavily)
+    if payload.serper_api_key and payload.serper_api_key.strip():
+        cleaned_serper = payload.serper_api_key.strip()
+        settings.SERPER_API_KEY = cleaned_serper
+        _persist_env_key("SERPER_API_KEY", cleaned_serper)
+
     if not (settings.TAVILY_API_KEY or settings.SERPER_API_KEY):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="لم يتم ضبط TAVILY_API_KEY أو SERPER_API_KEY في ملف .env لتشغيل البحث الخارجي الحي.",
+            detail="يرجى إدخال مفتاح محرك البحث (Tavily أو Serper) لتفعيل البحث العميق.",
         )
     try:
         result = await asyncio.to_thread(
@@ -386,8 +404,8 @@ async def api_telegram_process(payload: TelegramProcessRequest) -> Dict[str, Any
                 "skipped_untrusted": [{"url": u, "reason": r} for u, r in rejected],
                 "errors": [],
                 "note": (
-                    "وضع الفحص الآمن (Dry Run): تم استخراج الروابط الرسمية وفلترة المجمّعات والمكررات. "
-                    + ("" if settings.LLM_API_KEY else "أضف LLM_API_KEY في .env لتحويل الروابط الجديدة تلقائياً إلى مسودات.")
+                    "وضع الفحص الآمن: تم استخراج الروابط الرسمية وفلترة المجمّعات والمكررات. "
+                    + ("" if settings.LLM_API_KEY else "أدخل مفتاح الذكاء الاصطناعي في حقل الاستخلاص لتحويل الروابط الجديدة تلقائياً إلى مسودات.")
                 ),
             }
 

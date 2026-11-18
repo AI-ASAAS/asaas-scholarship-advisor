@@ -6,8 +6,9 @@ import {
   ErrorState,
   Field,
   FormError,
-  Icon,
+  PasswordInput,
   Segmented,
+  Select,
   Skeleton,
   Swash,
   TextArea,
@@ -53,8 +54,10 @@ export default function AdminPage() {
   const [selected, setSelected] = useState<Grant | null>(null);
   const [publishingId, setPublishingId] = useState<number | null>(null);
 
-  // Ingestion form state
+  // Ingestion form state (includes inline manual LLM key & model)
   const [ingestUrl, setIngestUrl] = useState('');
+  const [llmKey, setLlmKey] = useState('');
+  const [llmModel, setLlmModel] = useState('gemini-2.0-flash');
   const [ingesting, setIngesting] = useState(false);
   const [ingestError, setIngestError] = useState<unknown>(null);
 
@@ -92,9 +95,14 @@ export default function AdminPage() {
     setIngestError(null);
     setIngesting(true);
     try {
-      const created = await api.ingestUrl(ingestUrl);
+      const created = await api.ingestUrl({
+        official_url: ingestUrl,
+        llm_api_key: llmKey.trim() || undefined,
+        llm_model: llmModel,
+      });
       toast(`تم استخلاص "${created.title}" كمسودة للمراجعة`);
       setIngestUrl('');
+      setLlmKey('');
       setSelected(created);
       await loadGrants(tab);
     } catch (err) {
@@ -159,20 +167,41 @@ export default function AdminPage() {
       </div>
 
       <div className="grid grid--halves">
-        {/* Task 2: Agentic URL Scraper */}
+        {/* Agentic URL Scraper with inline manual LLM API Key entry */}
         <Card title={t('ingestCardTitle')} icon="sparkle">
-          {sysStatus && !sysStatus.llm_configured && (
-            <div className="notice-banner" style={{ marginBottom: 14, justifyContent: 'space-between', flexWrap: 'wrap' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <Icon name="alert" />
-                <span>{t('ingestKeyNotice')}</span>
-              </span>
-              <Button size="sm" variant="primary" icon="vault" onClick={() => setShowKeysModal(true)}>
-                {t('apiKeysBtn')}
-              </Button>
-            </div>
-          )}
           <form className="form" onSubmit={handleIngest}>
+            <div className="form__row">
+              <Field
+                label={t('apiKeyLlm')}
+                hint={
+                  sysStatus?.llm_key_hint
+                    ? `${t('readyYes')}: ${sysStatus.llm_key_hint}`
+                    : t('apiKeyLlmHint')
+                }
+              >
+                {(id) => (
+                  <PasswordInput
+                    id={id}
+                    autoComplete="off"
+                    placeholder={sysStatus?.llm_key_hint || 'AIzaSy... / sk-...'}
+                    value={llmKey}
+                    onChange={(e) => setLlmKey(e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label={t('apiKeyModel')}>
+                {(id) => (
+                  <Select id={id} value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>
+                    <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                    <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                    <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                    <option value="gpt-4o-mini">gpt-4o-mini</option>
+                    <option value="gpt-4o">gpt-4o</option>
+                    <option value="openrouter/google/gemini-2.0-flash-001">openrouter/gemini-2.0-flash</option>
+                  </Select>
+                )}
+              </Field>
+            </div>
             <Field label={t('fieldOfficialUrl')} hint={t('fieldOfficialUrlHint')}>
               {(id) => (
                 <TextInput

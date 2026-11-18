@@ -6,7 +6,7 @@ import {
   Field,
   FormError,
   Glass,
-  Icon,
+  PasswordInput,
   Select,
   Swash,
   TextInput,
@@ -23,6 +23,8 @@ export default function SearchPage() {
   const [major, setMajor] = useState('Computer Science');
   const [degreeLevel, setDegreeLevel] = useState('Master');
   const [targetCountry, setTargetCountry] = useState('');
+  const [tavilyKey, setTavilyKey] = useState('');
+  const [serperKey, setSerperKey] = useState('');
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [output, setOutput] = useState<ExternalSearchOutput | null>(null);
@@ -43,8 +45,13 @@ export default function SearchPage() {
         degree_level: degreeLevel,
         target_country: targetCountry.trim() || undefined,
         max_steps: 5,
+        tavily_api_key: tavilyKey.trim() || undefined,
+        serper_api_key: serperKey.trim() || undefined,
       });
       setOutput(res);
+      setTavilyKey('');
+      setSerperKey('');
+      void api.getSystemStatus().then(setSysStatus).catch(() => null);
       toast(res.reason);
     } catch (err) {
       setError(err);
@@ -69,24 +76,47 @@ export default function SearchPage() {
         </Button>
       </div>
 
-      {sysStatus && !sysStatus.search_configured && (
-        <div
-          className="notice-banner"
-          role="status"
-          style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}
-        >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <Icon name="alert" />
-            <span>{t('searchKeyMissing')}</span>
-          </span>
-          <Button size="sm" variant="primary" icon="vault" onClick={() => setShowKeysModal(true)}>
-            {t('apiKeysBtn')}
-          </Button>
-        </div>
-      )}
-
       <Card title={t('searchTitle')} icon="search">
         <form className="form" onSubmit={onSubmit}>
+          <div className="form__row">
+            <Field
+              label={t('apiKeyTavily')}
+              hint={
+                sysStatus?.tavily_key_hint
+                  ? `${t('readyYes')}: ${sysStatus.tavily_key_hint}`
+                  : t('apiKeyTavilyHint')
+              }
+            >
+              {(id) => (
+                <PasswordInput
+                  id={id}
+                  autoComplete="off"
+                  placeholder={sysStatus?.tavily_key_hint || 'tvly-...'}
+                  value={tavilyKey}
+                  onChange={(e) => setTavilyKey(e.target.value)}
+                />
+              )}
+            </Field>
+            <Field
+              label={t('apiKeySerper')}
+              hint={
+                sysStatus?.serper_key_hint
+                  ? `${t('readyYes')}: ${sysStatus.serper_key_hint}`
+                  : t('apiKeySerperHint')
+              }
+            >
+              {(id) => (
+                <PasswordInput
+                  id={id}
+                  autoComplete="off"
+                  placeholder={sysStatus?.serper_key_hint || 'Serper API Key'}
+                  value={serperKey}
+                  onChange={(e) => setSerperKey(e.target.value)}
+                />
+              )}
+            </Field>
+          </div>
+
           <div className="form__row">
             <Field label={t('fieldMajor')}>
               {(id) => (

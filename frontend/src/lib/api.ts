@@ -173,12 +173,19 @@ export const api = {
     request<GrantListResponse>(status && status !== 'all' ? `/api/grants?status=${encodeURIComponent(status)}` : '/api/grants'),
   getGrant: (id: number) => request<Grant>(`/api/grants/${id}`),
   publishGrant: (id: number) => request<Grant>(`/api/grants/${id}/publish`, { method: 'POST' }),
-  ingestUrl: (official_url: string) =>
+  ingestUrl: (payload: { official_url: string; llm_api_key?: string; llm_model?: string }) =>
     request<Grant>('/api/agents/ingest', {
       method: 'POST',
-      body: JSON.stringify({ official_url }),
+      body: JSON.stringify(payload),
     }),
-  searchExternal: (payload: { major: string; degree_level: string; target_country?: string; max_steps?: number }) =>
+  searchExternal: (payload: {
+    major: string;
+    degree_level: string;
+    target_country?: string;
+    max_steps?: number;
+    tavily_api_key?: string;
+    serper_api_key?: string;
+  }) =>
     request<ExternalSearchOutput>('/api/agents/search', {
       method: 'POST',
       body: JSON.stringify(payload),
