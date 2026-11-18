@@ -80,14 +80,36 @@ class LLMClient:
         self.api_key = api_key or settings.LLM_API_KEY or ""
         self.model = model or settings.LLM_MODEL or "gemini-1.5-flash"
         
-        # Configure endpoint base_url
+        # Reject misplaced Tavily search keys immediately with a clear Arabic hint
+        if self.api_key.startswith("tvly-"):
+            raise ValueError(
+                "المفتاح المُدخل هو مفتاح بحث Tavily (tvly-) وليس مفتاح ذكاء اصطناعي. "
+                "يرجى إدخال مفتاح Gemini (AIza...) أو Groq (gsk_...) أو OpenRouter (sk-or-...) أو OpenAI (sk-...)."
+            )
+
+        # Configure endpoint base_url automatically from key prefix or model
         if base_url:
             self.base_url = base_url.rstrip("/")
         elif self.api_key.startswith("AIza"):
             # Official Google Gemini OpenAI-compatible endpoint
             self.base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
-        elif "openrouter" in (self.model or "").lower():
+            if self.model.startswith("openrouter/"):
+                self.model = "gemini-2.0-flash"
+        elif self.api_key.startswith("sk-or-") or "openrouter" in (self.model or "").lower():
+            # OpenRouter OpenAI-compatible endpoint
             self.base_url = "https://openrouter.ai/api/v1"
+            if self.model.startswith("openrouter/"):
+                self.model = self.model.removeprefix("openrouter/")
+            elif "/" not in self.model:
+                if self.model.startswith("gemini"):
+                    self.model = f"google/{self.model}"
+                elif self.model.startswith("gpt"):
+                    self.model = f"openai/{self.model}"
+        elif self.api_key.startswith("gsk_"):
+            # Groq ultra-fast OpenAI-compatible endpoint
+            self.base_url = "https://api.groq.com/openai/v1"
+            if not any(x in self.model.lower() for x in ("llama", "mixtral", "qwen", "gemma")):
+                self.model = "llama-3.3-70b-versatile"
         else:
             self.base_url = "https://api.openai.com/v1"
 

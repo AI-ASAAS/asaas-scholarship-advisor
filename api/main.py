@@ -19,6 +19,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+import httpx
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -181,6 +182,12 @@ def system_status() -> SystemStatusResponse:
 @app.post("/api/system/keys", response_model=SystemStatusResponse)
 def api_update_keys(payload: UpdateKeysRequest) -> SystemStatusResponse:
     """Manually configure API keys from the UI: applies immediately in memory and saves to .env."""
+    if payload.llm_api_key and payload.llm_api_key.strip().startswith("tvly-"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="مفتاح tvly- مخصّص لمحرك بحث Tavily وليس للذكاء الاصطناعي؛ ضعه في حقل Tavily وأدخل مفتاح Gemini أو Groq أو OpenRouter أو OpenAI في حقل LLM.",
+        )
+
     field_map = {
         "llm_api_key": ("LLM_API_KEY", "LLM_API_KEY"),
         "llm_model": ("LLM_MODEL", "LLM_MODEL"),
@@ -281,11 +288,22 @@ async def api_ingest_url(payload: IngestRequest) -> GrantResponse:
         return GrantResponse(**grant.to_dict())
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except httpx.HTTPStatusError as exc:
+        code = exc.response.status_code
+        if code in (401, 403):
+            msg = "مفتاح الذكاء الاصطناعي غير صالح أو مرفوض من المزوّد؛ تأكد من إدخال مفتاح Gemini أو Groq أو OpenRouter أو OpenAI صحيح."
+        elif code == 429:
+            msg = "تم تجاوز الحد المجاني لمزوّد الذكاء الاصطناعي مؤقتاً؛ حاول بعد دقيقة أو جرّب نموذجاً آخر."
+        elif code == 404:
+            msg = "النموذج المحدّد غير متاح لهذا المفتاح؛ اختر نموذجاً متوافقاً مثل gemini-2.0-flash."
+        else:
+            msg = f"رفض المزوّد الطلب (رمز {code})؛ تحقق من الرابط أو المفتاح."
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
     except Exception as exc:
         logger.exception("Ingestion failed for %s", payload.official_url)
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"تعذر استخلاص الصفحة الرسمية: {type(exc).__name__} - {exc}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="تعذّر فتح أو استخلاص الصفحة الرسمية؛ تأكد من أن الرابط يعمل ومفتاح الذكاء الاصطناعي صحيح.",
         )
 
 
