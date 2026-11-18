@@ -1,6 +1,8 @@
 # منح أساس — وكيل الاستكشاف والبحث المستقل للمنح الدراسية
 ### Autonomous Discovery & Web Research Sub-Agent (Full-Stack AI Agents + ASAAS UI)
 
+> **المطوّر:** [Anas Abdulaziz Moqbel Al-Aghbari (@Anas-ALAghbari)](https://github.com/Anas-ALAghbari) — منظمة **[AI-ASAAS](https://github.com/AI-ASAAS)**
+
 منصة متكاملة من وكلاء الذكاء الاصطناعي المستقلين لاستكشاف المنح الدراسية العالمية المخصّصة للطلاب اليمنيين، والتحقق منها ومراقبتها وفق مبدأ صارم ضد الهلوسة: **«الكود يتحقق والموديل ينقل»**، ومبنية بالكامل وفق معايير **[AI-ASAAS/skills](https://github.com/AI-ASAAS/skills)** (AI + Backend FastAPI + Frontend `asaas-ui`).
 
 ---
