@@ -13,6 +13,7 @@ Key features:
 
 import hashlib
 import logging
+from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
@@ -206,8 +207,14 @@ def ingest(
         page_text=combined_text,
     )
 
-    # 7. Convert deadline to python date object if present
-    parsed_date = extraction.get_parsed_deadline()
+    # 7. Convert deadline to python date object ONLY if verified by evidence_check
+    verified_deadline_raw = sanitized_fields.get("deadline")
+    parsed_date = None
+    if verified_deadline_raw:
+        try:
+            parsed_date = date.fromisoformat(str(verified_deadline_raw).strip())
+        except (ValueError, TypeError):
+            parsed_date = None
 
     # 8. Prepare payload for repository
     grant_payload = {
