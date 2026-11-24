@@ -120,6 +120,8 @@ key in use — the old `gemini-1.5-flash` default may be retired by the provider
 | `LLM_MODEL` | provider default | Must support tool calling for the graph engine |
 | `LLM_BASE_URL` | provider default | Gateway/self-hosted override |
 | `LLM_TIMEOUT` | `25` | Seconds per provider call |
+| `LLM_MAX_RETRIES` | `3` | Retries on HTTP 429/500/503/timeout, with 1s/2s/4s backoff + jitter |
+| `LLM_FALLBACK_MODEL` | empty | Optional second model tried once before the deterministic engine |
 | `AGENT_ENGINE` | `graph` | `graph` = LLM supervisor; `legacy` = deterministic only |
 | `AGENT_OFFLINE` | `0` | `1` forces deterministic even with a key |
 | `GRAPH_MAX_TOOL_ROUNDS` | `6` | Tool-calling budget |

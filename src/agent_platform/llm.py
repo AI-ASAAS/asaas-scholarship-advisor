@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import json
 import logging
+import random
+import time
+from dataclasses import replace
 from typing import Any
 
 import httpx
@@ -16,6 +19,25 @@ import httpx
 from .config import Settings, settings
 
 logger = logging.getLogger(__name__)
+
+_RETRYABLE_STATUS_CODES = frozenset({429, 500, 503})
+
+
+def is_retryable_error(exc: BaseException) -> bool:
+    """True for the transient provider failures we retry."""
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status in _RETRYABLE_STATUS_CODES:
+        return True
+    if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
+        return True
+    return "timeout" in type(exc).__name__.lower()
+
+
+def retry_delay(attempt: int) -> float:
+    """Exponential backoff (1s, 2s, 4s, capped) with a little jitter."""
+    return float(min(2**attempt, 4)) + random.uniform(0.0, 0.25)
 
 
 class LLMUnavailable(RuntimeError):
@@ -112,12 +134,17 @@ def _call_gemini(
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model}:generateContent"
     )
+    generation_config: dict[str, Any] = {}
+    # Gemini 3 ignores temperature today and will reject it later.
+    if not model.lower().startswith("gemini-3"):
+        generation_config["temperature"] = temperature
+    if json_mode:
+        generation_config["responseMimeType"] = "application/json"
     payload: dict[str, Any] = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": temperature},
     }
-    if json_mode:
-        payload["generationConfig"]["responseMimeType"] = "application/json"
+    if generation_config:
+        payload["generationConfig"] = generation_config
 
     with httpx.Client(timeout=timeout) as client:
         response = client.post(
@@ -146,8 +173,10 @@ def _call_openai_compatible(
     payload: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": temperature,
     }
+    # Gemini 3 via the OpenAI-compatible surface rejects temperature.
+    if not model.lower().startswith("gemini-3"):
+        payload["temperature"] = temperature
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
 
@@ -165,6 +194,38 @@ def _call_openai_compatible(
         raise LLMResponseError("Unexpected chat-completions response shape.") from exc
 
 
+def _invoke_provider(
+    provider: str,
+    api_key: str,
+    model: str,
+    base_url: str,
+    prompt: str,
+    json_mode: bool,
+    temperature: float,
+    timeout: float,
+) -> str:
+    if provider == "gemini":
+        return _call_gemini(
+            prompt, api_key, model, json_mode, temperature, timeout
+        )
+    return _call_openai_compatible(
+        prompt, api_key, model, base_url, json_mode, temperature, timeout
+    )
+
+
+def _provider_targets(config: Settings) -> list[tuple[str, str, str, str]]:
+    targets = [resolve_provider(config)]
+    fallback_model = config.llm_fallback_model.strip()
+    if fallback_model and fallback_model != targets[0][2]:
+        try:
+            targets.append(
+                resolve_provider(replace(config, llm_model=fallback_model))
+            )
+        except LLMUnavailable:
+            logger.warning("LLM fallback model could not be resolved; ignoring it")
+    return targets
+
+
 def complete(
     prompt: str,
     *,
@@ -175,22 +236,53 @@ def complete(
 ) -> str:
     """Call the configured provider and return raw text.
 
-    Raises :class:`LLMUnavailable` when no provider/key exists so callers can
-    switch to their deterministic path.
+    Transient provider failures (HTTP 429/500/503 and timeouts) are retried with
+    exponential backoff.  After the primary model is exhausted, an optional
+    fallback model gets one attempt.  If everything fails, :class:`LLMUnavailable`
+    is raised so callers switch to their deterministic path.
     """
-    provider, api_key, model, base_url = resolve_provider(config)
+    targets = _provider_targets(config)
     effective_timeout = timeout or config.llm_timeout
-    logger.info("LLM request provider=%s model=%s json=%s", provider, model, json_mode)
+    retries = max(0, int(config.llm_max_retries))
+    last_error: BaseException | None = None
 
-    if provider == "gemini":
-        raw = _call_gemini(
-            prompt, api_key, model, json_mode, temperature, effective_timeout
-        )
-    else:
-        raw = _call_openai_compatible(
-            prompt, api_key, model, base_url, json_mode, temperature, effective_timeout
-        )
-    return strip_code_fences(raw)
+    for index, (provider, api_key, model, base_url) in enumerate(targets):
+        attempts = retries + 1 if index == 0 else 1
+        for attempt in range(attempts):
+            logger.info(
+                "LLM request provider=%s model=%s json=%s attempt=%d",
+                provider,
+                model,
+                json_mode,
+                attempt + 1,
+            )
+            try:
+                raw = _invoke_provider(
+                    provider,
+                    api_key,
+                    model,
+                    base_url,
+                    prompt,
+                    json_mode,
+                    temperature,
+                    effective_timeout,
+                )
+                return strip_code_fences(raw)
+            except Exception as exc:  # noqa: BLE001 - classified below
+                last_error = exc
+                if not is_retryable_error(exc) or attempt == attempts - 1:
+                    break
+                delay = retry_delay(attempt)
+                logger.warning(
+                    "LLM request failed (%s); retrying in %.2fs",
+                    type(exc).__name__,
+                    delay,
+                )
+                time.sleep(delay)
+        if index == 0 and len(targets) > 1:
+            logger.warning("Primary LLM model failed; trying the fallback model")
+
+    raise LLMUnavailable("LLM provider failed after retries.") from last_error
 
 
 def complete_json(

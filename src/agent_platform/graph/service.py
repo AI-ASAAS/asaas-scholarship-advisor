@@ -141,9 +141,11 @@ class AgentService:
             )
         except Exception:  # pragma: no cover - provider/transport failure
             logger.exception("Agent graph failed; falling back to the deterministic engine")
-            return self.orchestrator.chat(
+            response = self.orchestrator.chat(
                 session_id, message, profile_override=profile_override, on_step=on_step
             )
+            # No model produced this answer, so it must not be reported as LLM-backed.
+            return response.model_copy(update={"llm_used": False})
 
     def stream(self, session_id: str, message: str) -> Iterator[tuple[str, Any]]:
         if not self.graph_enabled:
@@ -156,7 +158,10 @@ class AgentService:
             logger.exception("Agent graph stream failed; falling back to the deterministic engine")
             # The student must still receive a verified answer, even if the
             # provider failed mid-run; a repeated step is preferable to silence.
-            yield from self.orchestrator.stream(session_id, message)
+            for kind, payload in self.orchestrator.stream(session_id, message):
+                if kind == "final":
+                    payload = payload.model_copy(update={"llm_used": False})
+                yield kind, payload
 
     # ------------------------------------------------------------------
     # Graph execution

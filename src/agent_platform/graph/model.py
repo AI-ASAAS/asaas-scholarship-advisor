@@ -12,8 +12,11 @@ Credentials come exclusively from :mod:`agent_platform.llm`
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any
+import time
+from dataclasses import replace
+from typing import Any, Callable
 
 from langchain_openai import ChatOpenAI
 
@@ -36,13 +39,104 @@ class AgentModelUnavailable(RuntimeError):
     """Raised when no provider is configured for the agent engine."""
 
 
-def build_chat_model(config: Settings = settings) -> ChatOpenAI:
-    """Return a temperature-0 tool-calling chat model for the configured provider."""
-    try:
-        provider, api_key, model, base_url = llm.resolve_provider(config)
-    except llm.LLMUnavailable as exc:
-        raise AgentModelUnavailable(str(exc)) from exc
+class RetryingChatModel:
+    """Retry transient provider failures, then try an optional fallback model.
 
+    Wraps any chat-model-like object (``bind_tools`` / ``invoke``) so retries
+    apply to both the tool-bound and plain calls made by the graph.  When every
+    attempt fails the last provider error is re-raised; the service turns that
+    into a deterministic answer.
+    """
+
+    def __init__(
+        self,
+        primary: Any,
+        fallback: Any | None = None,
+        max_retries: int = 3,
+        sleep: Callable[[float], Any] | None = None,
+    ) -> None:
+        self.primary = primary
+        self.fallback = fallback
+        self.max_retries = max(0, int(max_retries))
+        self._sleep = sleep or time.sleep
+
+    def bind_tools(self, tools: Any, **kwargs: Any) -> "RetryingChatModel":
+        binder = getattr(self.primary, "bind_tools", None)
+        primary = binder(tools, **kwargs) if binder else self.primary
+        fallback = None
+        if self.fallback is not None:
+            fallback_binder = getattr(self.fallback, "bind_tools", None)
+            fallback = (
+                fallback_binder(tools, **kwargs)
+                if fallback_binder
+                else self.fallback
+            )
+        return RetryingChatModel(
+            primary=primary,
+            fallback=fallback,
+            max_retries=self.max_retries,
+            sleep=self._sleep,
+        )
+
+    def _invoke_primary(
+        self, messages: Any, config: Any, kwargs: dict[str, Any]
+    ) -> Any:
+        last_error: BaseException | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                return self.primary.invoke(messages, config=config, **kwargs)
+            except Exception as exc:  # noqa: BLE001 - classified below
+                last_error = exc
+                if not llm.is_retryable_error(exc) or attempt == self.max_retries:
+                    break
+                delay = llm.retry_delay(attempt)
+                logger.warning(
+                    "Agent model failed (%s); retrying in %.2fs",
+                    type(exc).__name__,
+                    delay,
+                )
+                self._sleep(delay)
+        if self.fallback is not None:
+            logger.warning("Agent model failed; trying the fallback model")
+            return self.fallback.invoke(messages, config=config, **kwargs)
+        raise last_error  # type: ignore[misc]
+
+    def invoke(self, messages: Any, config: Any = None, **kwargs: Any) -> Any:
+        return self._invoke_primary(messages, config, kwargs)
+
+    async def ainvoke(
+        self, messages: Any, config: Any = None, **kwargs: Any
+    ) -> Any:
+        last_error: BaseException | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                return await self.primary.ainvoke(messages, config=config, **kwargs)
+            except Exception as exc:  # noqa: BLE001 - classified below
+                last_error = exc
+                if not llm.is_retryable_error(exc) or attempt == self.max_retries:
+                    break
+                delay = llm.retry_delay(attempt)
+                logger.warning(
+                    "Agent model failed (%s); retrying in %.2fs",
+                    type(exc).__name__,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+        if self.fallback is not None:
+            logger.warning("Agent model failed; trying the fallback model")
+            return await self.fallback.ainvoke(
+                messages, config=config, **kwargs
+            )
+        raise last_error  # type: ignore[misc]
+
+
+def _build_single_model(
+    provider: str,
+    api_key: str,
+    model: str,
+    base_url: str,
+    config: Settings,
+) -> ChatOpenAI:
     if provider == "gemini":
         base_url = _GEMINI_OPENAI_BASE
     if not base_url:  # pragma: no cover - resolve_provider guarantees this
@@ -51,15 +145,49 @@ def build_chat_model(config: Settings = settings) -> ChatOpenAI:
     headers: dict[str, Any] = (
         dict(_OPENROUTER_HEADERS) if provider == "openrouter" else {}
     )
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "api_key": api_key,
+        "base_url": base_url,
+        "timeout": config.llm_timeout,
+        # RetryingChatModel owns the retry policy (LLM_MAX_RETRIES).
+        "max_retries": 0,
+        "default_headers": headers,
+    }
+    # Gemini 3 ignores temperature today and will reject it later.
+    if not model.lower().startswith("gemini-3"):
+        kwargs["temperature"] = 0
+    return ChatOpenAI(**kwargs)
+
+
+def build_chat_model(config: Settings = settings) -> RetryingChatModel:
+    """Return a tool-calling chat model with retries and an opt-in fallback."""
+    try:
+        provider, api_key, model, base_url = llm.resolve_provider(config)
+    except llm.LLMUnavailable as exc:
+        raise AgentModelUnavailable(str(exc)) from exc
+
     logger.info("Agent model provider=%s model=%s", provider, model)
-    return ChatOpenAI(
-        model=model,
-        api_key=api_key,
-        base_url=base_url,
-        temperature=0,
-        timeout=config.llm_timeout,
-        max_retries=1,
-        default_headers=headers,
+    primary = _build_single_model(provider, api_key, model, base_url, config)
+
+    fallback = None
+    fallback_model = config.llm_fallback_model.strip()
+    if fallback_model and fallback_model != model:
+        try:
+            f_provider, f_key, f_model, f_base = llm.resolve_provider(
+                replace(config, llm_model=fallback_model)
+            )
+            logger.info("Agent fallback model provider=%s model=%s", f_provider, f_model)
+            fallback = _build_single_model(
+                f_provider, f_key, f_model, f_base, config
+            )
+        except (llm.LLMUnavailable, AgentModelUnavailable):
+            logger.warning("Agent fallback model could not be resolved; ignoring it")
+
+    return RetryingChatModel(
+        primary=primary,
+        fallback=fallback,
+        max_retries=config.llm_max_retries,
     )
 
 

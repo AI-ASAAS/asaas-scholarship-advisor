@@ -60,6 +60,8 @@ class Settings:
     llm_model: str = os.getenv("LLM_MODEL", "").strip()
     llm_base_url: str = os.getenv("LLM_BASE_URL", "").strip()
     llm_timeout: float = _env_float("LLM_TIMEOUT", 25.0)
+    llm_fallback_model: str = os.getenv("LLM_FALLBACK_MODEL", "").strip()
+    llm_max_retries: int = _env_int("LLM_MAX_RETRIES", 3)
     offline: bool = _env_bool("AGENT_OFFLINE", False)
 
     # --- Agent engine. "graph" = LangGraph supervisor + tools; "legacy" = the
