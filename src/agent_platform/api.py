@@ -220,6 +220,7 @@ def _health_payload(runtime: Runtime) -> HealthResponse:
         logger.exception("Could not count grants")
         grants = 0
     configured = llm.is_configured()
+    available = not llm.circuit.is_open()
     return HealthResponse(
         status="ok",
         version=settings.app_version,
@@ -230,6 +231,11 @@ def _health_payload(runtime: Runtime) -> HealthResponse:
         external_search_configured=settings.external_search_configured,
         grants_available=grants,
         repos_present=repos_present(),
+        llm_available=available,
+        llm_retry_after_seconds=(
+            0.0 if available else llm.circuit.retry_after_seconds()
+        ),
+        llm_config_error=llm.circuit.config_error(),
     )
 
 

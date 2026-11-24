@@ -29,6 +29,17 @@ from fastapi.testclient import TestClient
 from agent_platform.api import Runtime, create_app
 from agent_platform.knowledge import GrantRepository
 from agent_platform.schemas import DegreeLevel, StudentProfile
+from agent_platform import llm, matching
+
+
+@pytest.fixture(autouse=True)
+def _reset_llm_runtime_state() -> object:
+    """Keep the process-wide circuit breaker and caches isolated per test."""
+    llm.reset_runtime_state()
+    matching.clear_semantic_cache()
+    yield
+    llm.reset_runtime_state()
+    matching.clear_semantic_cache()
 
 
 @pytest.fixture()

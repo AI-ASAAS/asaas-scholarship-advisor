@@ -20,6 +20,7 @@ from langchain_core.language_models import BaseChatModel
 
 from .. import llm
 from ..config import settings
+from ..deadlines import deadline_verdict, find_focused_grant, parse_date_from_text
 from ..document_agent import DocumentAgent
 from ..extraction import detect_language, merge_profile
 from ..knowledge import GrantRepository
@@ -36,7 +37,7 @@ from ..schemas import (
     ThoughtStep,
 )
 from .builder import build_graph
-from .model import build_chat_model
+from .model import RetryingChatModel, build_chat_model
 from .prompts import fallback_reply
 from .tools import ToolContext, build_tools
 
@@ -112,6 +113,10 @@ class AgentService:
     def graph_enabled(self) -> bool:
         if self.requested_engine == "legacy":
             return False
+        if llm.circuit.is_open():
+            # A quota error already proved the key unusable; do not spend
+            # another turn (or another model call) discovering it again.
+            return False
         if self._model_factory is not None:
             return True
         return llm.is_configured()
@@ -131,37 +136,84 @@ class AgentService:
         profile_override: StudentProfile | None = None,
         on_step: Callable[[ThoughtStep], None] | None = None,
     ) -> ChatResponse:
-        if not self.graph_enabled:
-            return self.orchestrator.chat(
-                session_id, message, profile_override=profile_override, on_step=on_step
-            )
+        tokens = llm.begin_turn()
         try:
-            return self._chat_graph(
-                session_id, message, profile_override=profile_override, on_step=on_step
-            )
-        except Exception:  # pragma: no cover - provider/transport failure
-            logger.exception("Agent graph failed; falling back to the deterministic engine")
-            response = self.orchestrator.chat(
-                session_id, message, profile_override=profile_override, on_step=on_step
-            )
-            # No model produced this answer, so it must not be reported as LLM-backed.
-            return response.model_copy(update={"llm_used": False})
+            if not self.graph_enabled:
+                response = self.orchestrator.chat(
+                    session_id,
+                    message,
+                    profile_override=profile_override,
+                    on_step=on_step,
+                )
+                return response.model_copy(
+                    update={
+                        "llm_used": llm.llm_used_in_turn(),
+                        "model_calls": llm.model_calls(),
+                    }
+                )
+            try:
+                return self._chat_graph(
+                    session_id,
+                    message,
+                    profile_override=profile_override,
+                    on_step=on_step,
+                )
+            except Exception:  # pragma: no cover - provider/transport failure
+                logger.exception(
+                    "Agent graph failed; falling back to the deterministic engine"
+                )
+                response = self.orchestrator.chat(
+                    session_id,
+                    message,
+                    profile_override=profile_override,
+                    on_step=on_step,
+                )
+                # No model produced this answer, so it must not be reported as
+                # LLM-backed.
+                return response.model_copy(
+                    update={
+                        "llm_used": llm.llm_used_in_turn(),
+                        "model_calls": llm.model_calls(),
+                    }
+                )
+        finally:
+            llm.end_turn(tokens)
 
     def stream(self, session_id: str, message: str) -> Iterator[tuple[str, Any]]:
-        if not self.graph_enabled:
-            yield from self.orchestrator.stream(session_id, message)
-            return
-
+        tokens = llm.begin_turn()
         try:
-            yield from self._stream_graph(session_id, message)
-        except Exception:  # pragma: no cover - provider/transport failure
-            logger.exception("Agent graph stream failed; falling back to the deterministic engine")
-            # The student must still receive a verified answer, even if the
-            # provider failed mid-run; a repeated step is preferable to silence.
-            for kind, payload in self.orchestrator.stream(session_id, message):
-                if kind == "final":
-                    payload = payload.model_copy(update={"llm_used": False})
-                yield kind, payload
+            if not self.graph_enabled:
+                for kind, payload in self.orchestrator.stream(session_id, message):
+                    if kind == "final":
+                        payload = payload.model_copy(
+                            update={
+                                "llm_used": llm.llm_used_in_turn(),
+                                "model_calls": llm.model_calls(),
+                            }
+                        )
+                    yield kind, payload
+                return
+
+            try:
+                yield from self._stream_graph(session_id, message)
+            except Exception:  # pragma: no cover - provider/transport failure
+                logger.exception(
+                    "Agent graph stream failed; falling back to the deterministic engine"
+                )
+                # The student must still receive a verified answer, even if the
+                # provider failed mid-run; a repeated step is preferable to
+                # silence.
+                for kind, payload in self.orchestrator.stream(session_id, message):
+                    if kind == "final":
+                        payload = payload.model_copy(
+                            update={
+                                "llm_used": llm.llm_used_in_turn(),
+                                "model_calls": llm.model_calls(),
+                            }
+                        )
+                    yield kind, payload
+        finally:
+            llm.end_turn(tokens)
 
     # ------------------------------------------------------------------
     # Graph execution
@@ -183,11 +235,43 @@ class AgentService:
             self.memory.artifacts(session_id, limit=6)
         )
 
+        user_date = parse_date_from_text(message)
+        cards = self.repository.list_published(limit=50)
+        focused_grant = None
+        deadline_verdict_str = None
+        deadline_fact = None
+        if user_date is not None:
+            focused_grant = find_focused_grant(message, cards, history, self.repository)
+            deadline_verdict_str = deadline_verdict(user_date, focused_grant, language)
+            if focused_grant is not None:
+                deadline_fact = (
+                    f"PRE-COMPUTED VERIFIED FACT: The user asks about the deadline of {focused_grant.title}. "
+                    f"The verified deadline is {focused_grant.deadline or 'NOT ANNOUNCED/NULL'}. "
+                    f"Your answer MUST open with the exact verdict: '{deadline_verdict_str}'."
+                )
+            else:
+                deadline_fact = (
+                    f"PRE-COMPUTED VERIFIED FACT: The user mentions a date, but no specific scholarship "
+                    f"is in focus. You MUST answer by asking the student which scholarship they are asking about: "
+                    f"'{deadline_verdict_str}'."
+                )
+
         context = ToolContext(
-            profile=profile, repository=self.repository, documents=self.documents
+            profile=profile,
+            repository=self.repository,
+            documents=self.documents,
+            user_date=user_date,
+            deadline_verdict=deadline_verdict_str,
         )
         tools = build_tools(context)
-        model = self._model_factory() if self._model_factory else build_chat_model()
+        if self._model_factory:
+            raw_model = self._model_factory()
+            if not isinstance(raw_model, RetryingChatModel):
+                model = RetryingChatModel(primary=raw_model, max_retries=0)
+            else:
+                model = raw_model
+        else:
+            model = build_chat_model()
         graph = build_graph(model=model, tools=tools, context=context)
 
         initial: dict[str, Any] = {
@@ -208,7 +292,11 @@ class AgentService:
             "sources": [],
             "tools_used": [],
             "blocked": False,
-            "llm_used": True,
+            "llm_used": False,
+            "deadline_fact": deadline_fact,
+            "deadline_verdict": deadline_verdict_str,
+            "user_date": user_date,
+            "focused_grant": focused_grant.model_dump(mode="json") if focused_grant else None,
         }
         return context, graph, initial
 
@@ -259,6 +347,12 @@ class AgentService:
         language = state.get("language") or "ar"
         language = "en" if language == "en" else "ar"
         reply = (state.get("reply") or "").strip() or fallback_reply(language)
+        verdict = state.get("deadline_verdict")
+        if verdict:
+            if state.get("focused_grant") is None and state.get("user_date") is not None:
+                reply = verdict
+            elif not reply.startswith(verdict):
+                reply = f"{verdict}\n\n{reply}"
 
         steps = [ThoughtStep.model_validate(raw) for raw in state.get("steps") or []]
         if on_step:
@@ -315,7 +409,8 @@ class AgentService:
             documents=documents,
             advisor=advisor,
             sources=sorted({url for url in state.get("sources") or [] if url}),
-            llm_used=True,
+            llm_used=llm.llm_used_in_turn(),
+            model_calls=llm.model_calls(),
         )
 
 

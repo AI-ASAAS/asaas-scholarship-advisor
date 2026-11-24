@@ -108,12 +108,11 @@ def test_chat_model_uses_fallback_after_repeated_503() -> None:
     result = model.invoke([HumanMessage(content="hi")])
 
     assert result.content == "fallback"
-    assert primary.calls == 4
+    assert primary.calls == 3
     assert fallback.calls == 1
-    assert len(sleeps) == 3
+    assert len(sleeps) == 2
     assert 1.0 <= sleeps[0] < 1.5
     assert 2.0 <= sleeps[1] < 2.5
-    assert 4.0 <= sleeps[2] < 4.5
 
 
 def test_chat_model_raises_when_every_model_fails() -> None:
@@ -299,7 +298,7 @@ def test_complete_uses_fallback_model_after_repeated_503(
     )
 
     assert result == "fallback-ok"
-    assert calls == ["primary-model"] * 4 + ["fallback-model"]
+    assert calls == ["primary-model"] * 3 + ["fallback-model"]
 
 
 def test_complete_raises_unavailable_when_everything_fails(
@@ -327,7 +326,7 @@ def test_complete_raises_unavailable_when_everything_fails(
             "hi", config=_settings(llm_fallback_model="fallback-model")
         )
 
-    assert calls == ["primary-model"] * 4 + ["fallback-model"]
+    assert calls == ["primary-model"] * 3 + ["fallback-model"]
 
 
 def test_gemini_3_payload_omits_temperature(

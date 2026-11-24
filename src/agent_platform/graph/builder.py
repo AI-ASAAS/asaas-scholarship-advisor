@@ -319,6 +319,11 @@ def build_graph(
         if not reply:
             reply = fallback_reply(language)
 
+        fact = state.get("deadline_fact") or (context.deadline_fact if context else None)
+        if fact:
+            from ..deadlines import apply_deadline_fact
+            reply = apply_deadline_fact(reply, fact)
+
         report = check_output(reply)
         guard_events = list(state.get("guardrails") or [])
         guard_events.extend(event.model_dump(mode="json") for event in report.events)

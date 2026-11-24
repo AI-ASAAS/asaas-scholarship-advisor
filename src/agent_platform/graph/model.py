@@ -18,6 +18,7 @@ import time
 from dataclasses import replace
 from typing import Any, Callable
 
+import httpx
 from langchain_openai import ChatOpenAI
 
 from .. import llm
@@ -54,11 +55,13 @@ class RetryingChatModel:
         fallback: Any | None = None,
         max_retries: int = 3,
         sleep: Callable[[float], Any] | None = None,
+        budget: llm.TurnBudget | None = None,
     ) -> None:
         self.primary = primary
         self.fallback = fallback
         self.max_retries = max(0, int(max_retries))
         self._sleep = sleep or time.sleep
+        self.budget = budget
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> "RetryingChatModel":
         binder = getattr(self.primary, "bind_tools", None)
@@ -76,20 +79,47 @@ class RetryingChatModel:
             fallback=fallback,
             max_retries=self.max_retries,
             sleep=self._sleep,
+            budget=self.budget,
         )
+
+    @staticmethod
+    def _budget() -> llm.TurnBudget | None:
+        return llm.current_budget()
+
+    def _check_budget(self, budget: llm.TurnBudget | None) -> None:
+        if budget is not None and budget.expired():
+            raise llm.LLMTurnBudgetExceeded(
+                "The per-turn LLM time budget is exhausted."
+            )
+
+    def _retry_limit(self) -> int:
+        return min(self.max_retries, llm.MAX_RETRIES)
 
     def _invoke_primary(
         self, messages: Any, config: Any, kwargs: dict[str, Any]
     ) -> Any:
+        budget = self.budget or self._budget()
+        retries = self._retry_limit()
         last_error: BaseException | None = None
-        for attempt in range(self.max_retries + 1):
+        for attempt in range(retries + 1):
+            self._check_budget(budget)
+            llm.record_model_call()
             try:
-                return self.primary.invoke(messages, config=config, **kwargs)
+                res = self.primary.invoke(messages, config=config, **kwargs)
+                llm.record_successful_call()
+                return res
             except Exception as exc:  # noqa: BLE001 - classified below
                 last_error = exc
-                if not llm.is_retryable_error(exc) or attempt == self.max_retries:
+                err_class = llm.note_provider_failure(exc)
+                if err_class in (llm.ErrorClass.PERMANENT, llm.ErrorClass.ACCOUNT_QUOTA):
+                    raise
+                if not llm.is_retryable_error(exc) or attempt == retries:
                     break
-                delay = llm.retry_delay(attempt)
+                delay = llm.retry_delay(attempt, exc)
+                if budget is not None and budget.remaining() <= delay:
+                    raise llm.LLMTurnBudgetExceeded(
+                        "The per-turn LLM time budget is exhausted."
+                    )
                 logger.warning(
                     "Agent model failed (%s); retrying in %.2fs",
                     type(exc).__name__,
@@ -97,8 +127,16 @@ class RetryingChatModel:
                 )
                 self._sleep(delay)
         if self.fallback is not None:
+            self._check_budget(budget)
             logger.warning("Agent model failed; trying the fallback model")
-            return self.fallback.invoke(messages, config=config, **kwargs)
+            llm.record_model_call()
+            try:
+                res = self.fallback.invoke(messages, config=config, **kwargs)
+                llm.record_successful_call()
+                return res
+            except Exception as exc:
+                llm.note_provider_failure(exc)
+                raise
         raise last_error  # type: ignore[misc]
 
     def invoke(self, messages: Any, config: Any = None, **kwargs: Any) -> Any:
@@ -107,15 +145,28 @@ class RetryingChatModel:
     async def ainvoke(
         self, messages: Any, config: Any = None, **kwargs: Any
     ) -> Any:
+        budget = self.budget or self._budget()
+        retries = self._retry_limit()
         last_error: BaseException | None = None
-        for attempt in range(self.max_retries + 1):
+        for attempt in range(retries + 1):
+            self._check_budget(budget)
+            llm.record_model_call()
             try:
-                return await self.primary.ainvoke(messages, config=config, **kwargs)
+                res = await self.primary.ainvoke(messages, config=config, **kwargs)
+                llm.record_successful_call()
+                return res
             except Exception as exc:  # noqa: BLE001 - classified below
                 last_error = exc
-                if not llm.is_retryable_error(exc) or attempt == self.max_retries:
+                err_class = llm.note_provider_failure(exc)
+                if err_class in (llm.ErrorClass.PERMANENT, llm.ErrorClass.ACCOUNT_QUOTA):
+                    raise
+                if not llm.is_retryable_error(exc) or attempt == retries:
                     break
-                delay = llm.retry_delay(attempt)
+                delay = llm.retry_delay(attempt, exc)
+                if budget is not None and budget.remaining() <= delay:
+                    raise llm.LLMTurnBudgetExceeded(
+                        "The per-turn LLM time budget is exhausted."
+                    )
                 logger.warning(
                     "Agent model failed (%s); retrying in %.2fs",
                     type(exc).__name__,
@@ -123,10 +174,18 @@ class RetryingChatModel:
                 )
                 await asyncio.sleep(delay)
         if self.fallback is not None:
+            self._check_budget(budget)
             logger.warning("Agent model failed; trying the fallback model")
-            return await self.fallback.ainvoke(
-                messages, config=config, **kwargs
-            )
+            llm.record_model_call()
+            try:
+                res = await self.fallback.ainvoke(
+                    messages, config=config, **kwargs
+                )
+                llm.record_successful_call()
+                return res
+            except Exception as exc:
+                llm.note_provider_failure(exc)
+                raise
         raise last_error  # type: ignore[misc]
 
 
@@ -149,7 +208,9 @@ def _build_single_model(
         "model": model,
         "api_key": api_key,
         "base_url": base_url,
-        "timeout": config.llm_timeout,
+        "timeout": httpx.Timeout(
+            config.llm_timeout, connect=config.llm_connect_timeout
+        ),
         # RetryingChatModel owns the retry policy (LLM_MAX_RETRIES).
         "max_retries": 0,
         "default_headers": headers,

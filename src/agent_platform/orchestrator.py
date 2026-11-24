@@ -28,6 +28,7 @@ from . import guardrails, llm
 from .advisor import build_advisor_report
 from .concurrency import OperationTimeoutError, run_with_timeout
 from .config import settings
+from .deadlines import deadline_verdict, find_focused_grant, parse_date_from_text
 from .document_agent import DocumentAgent
 from .extraction import detect_language, extract_profile_patch, merge_profile
 from .guardrails import check_input, check_output, is_domain_text, normalize
@@ -313,7 +314,9 @@ class Orchestrator:
                 sources += [card.official_url for card in cards]
 
             elif intent == Intent.SCHOLARSHIP_QUESTION:
-                reply, cards = self._handle_question(decision.text, profile, missing, language, step)
+                reply, cards = self._handle_question(
+                    decision.text, profile, missing, language, step, session_id=session_id
+                )
                 sources += [card.official_url for card in cards]
 
             elif intent == Intent.OFF_TOPIC:
@@ -352,7 +355,8 @@ class Orchestrator:
             documents=documents_out,
             advisor=advisor_out,
             sources=sorted(set(sources)),
-            llm_used=llm.is_configured(),
+            llm_used=llm.llm_used_in_turn(),
+            model_calls=llm.model_calls(),
         )
 
     def stream(
@@ -583,9 +587,28 @@ class Orchestrator:
         missing: list[str],
         language: str,
         step: Callable[..., None],
+        session_id: str | None = None,
     ) -> tuple[str, list[GrantCard]]:
         cards = self.repository.list_published(limit=50)
         step("knowledge", "تحميل المنح الموثقة", detail=f"{len(cards)} grants")
+
+        history = (
+            [
+                {"role": item.role, "content": item.content}
+                for item in self.memory.history(session_id, limit=6)
+            ]
+            if session_id
+            else []
+        )
+        user_date = parse_date_from_text(message)
+        if user_date is not None:
+            focused = find_focused_grant(message, cards, history, self.repository)
+            verdict = deadline_verdict(user_date, focused, language)
+            if focused is None:
+                return verdict, []
+            reply = self._deadline_details_reply(verdict, focused, language)
+            return reply, [focused]
+
         grant = self._resolve_grant(message, cards)
         if grant:
             reply = self._grant_details_reply(grant, language)
@@ -666,9 +689,13 @@ class Orchestrator:
             for word in ("ملفي", "معدلي", "تخصصي", "بياناتي", "my profile", "my gpa")
         ):
             return Intent.PROFILE_UPDATE
-        if self._looks_like_grant_question(text) or (
-            ("منحه" in text or "منحة" in text or "scholarship" in text)
-            and self._has_question_word(text)
+        if (
+            self._looks_like_grant_question(text)
+            or (
+                ("منحه" in text or "منحة" in text or "scholarship" in text or "deadline" in text or "موعد" in text)
+                and self._has_question_word(text)
+            )
+            or parse_date_from_text(text) is not None
         ):
             return Intent.SCHOLARSHIP_QUESTION
         if self._has_question_word(text) and not is_domain_text(text):
@@ -931,6 +958,27 @@ class Orchestrator:
                 + "\n"
             )
         return f"{head}\n{result.content}"
+
+    def _deadline_details_reply(self, verdict: str, card: GrantCard, language: str) -> str:
+        if language == "ar":
+            lines = [
+                verdict,
+                "",
+                f"### {card.title}",
+                f"- الجهة: {card.provider or 'غير محددة'}",
+                f"- الدولة: {card.country or 'غير محددة'}",
+                f"- الرابط الرسمي: {card.official_url}",
+            ]
+        else:
+            lines = [
+                verdict,
+                "",
+                f"### {card.title}",
+                f"- Provider: {card.provider or 'Not specified'}",
+                f"- Country: {card.country or 'Not specified'}",
+                f"- Official link: {card.official_url}",
+            ]
+        return "\n".join(lines)
 
     def _grant_details_reply(self, card: GrantCard, language: str) -> str:
         accepts = {

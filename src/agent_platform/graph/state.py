@@ -50,3 +50,7 @@ class AgentState(TypedDict, total=False):
 
     # -- meta ------------------------------------------------------------
     llm_used: bool
+    deadline_fact: str | None
+    deadline_verdict: str | None
+    user_date: tuple[int, int, int | None] | None
+    focused_grant: dict[str, Any] | None

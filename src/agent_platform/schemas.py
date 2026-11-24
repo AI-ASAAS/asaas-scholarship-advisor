@@ -313,6 +313,7 @@ class ChatResponse(BaseModel):
     advisor: AdvisorReport | None = None
     sources: list[str] = Field(default_factory=list)
     llm_used: bool = False
+    model_calls: int = 0
 
 
 class DocumentRequest(BaseModel):
@@ -351,3 +352,6 @@ class HealthResponse(BaseModel):
     external_search_configured: bool = False
     grants_available: int = 0
     repos_present: bool = True
+    llm_available: bool = True
+    llm_retry_after_seconds: float = 0.0
+    llm_config_error: str | None = None

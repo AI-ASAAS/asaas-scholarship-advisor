@@ -11,10 +11,12 @@ No network call happens in deterministic mode.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
-from typing import Iterable
+import threading
+from typing import Any, Iterable
 
 from . import llm
 from .config import settings
@@ -285,12 +287,51 @@ def _deterministic_semantic(profile: StudentProfile, card: GrantCard) -> float:
     return round(max(20.0, min(95.0, score)), 1)
 
 
+_SEMANTIC_CACHE: dict[str, dict[str, float]] = {}
+_SEMANTIC_CACHE_LOCK = threading.Lock()
+
+
+def clear_semantic_cache() -> None:
+    """Drop cached semantic scores (test isolation and explicit resets)."""
+    with _SEMANTIC_CACHE_LOCK:
+        _SEMANTIC_CACHE.clear()
+
+
+def _semantic_cache_key(
+    profile: StudentProfile, cards: list[GrantCard], config: Any
+) -> str:
+    payload = {
+        "profile": profile.model_dump(mode="json"),
+        "grants": [
+            (
+                card.grant_id,
+                card.title,
+                card.description,
+                card.funding,
+                tuple(card.fields_of_study),
+            )
+            for card in cards
+        ],
+        "provider": config.llm_provider,
+        "model": config.llm_model,
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False, default=str
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _llm_semantic_scores(
     profile: StudentProfile, cards: Iterable[GrantCard], config=settings
 ) -> dict[str, float]:
     cards = list(cards)
     if not cards or not config.llm_configured:
         return {}
+    cache_key = _semantic_cache_key(profile, cards, config)
+    with _SEMANTIC_CACHE_LOCK:
+        cached = _SEMANTIC_CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached)
     payload = [
         {
             "grant_id": card.grant_id,
@@ -322,6 +363,9 @@ Do not add explanations or markdown."""
         raw = data.get(card.grant_id)
         if isinstance(raw, (int, float)) and 0 <= float(raw) <= 100:
             scores[card.grant_id] = float(raw)
+    if scores:
+        with _SEMANTIC_CACHE_LOCK:
+            _SEMANTIC_CACHE[cache_key] = dict(scores)
     return scores
 
 

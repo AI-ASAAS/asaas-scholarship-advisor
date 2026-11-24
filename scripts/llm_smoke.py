@@ -126,6 +126,11 @@ def main() -> int:
             with TestClient(create_app(runtime)) as client:
                 health = client.get("/health").json()
                 print(f"engine={health.get('agent_engine')}")
+                if not health.get("llm_available", True):
+                    print(
+                        f"circuit open, retry_after={health.get('llm_retry_after_seconds')}"
+                    )
+                    return 0
 
                 session_id = client.post("/api/session").json()["session_id"]
                 replies: list[dict] = []
@@ -141,7 +146,8 @@ def main() -> int:
                     replies.append(data)
                     print(
                         f"turn={index} intent={data['intent']} "
-                        f"llm_used={data['llm_used']}"
+                        f"llm_used={data['llm_used']} "
+                        f"model_calls={data.get('model_calls', 0)}"
                     )
                     for match in data.get("matches", []):
                         print(
@@ -149,7 +155,7 @@ def main() -> int:
                             f"grant={match['title']}"
                         )
 
-                print("reply4:", replies[3]["reply"][:600])
+                print("reply4:", replies[3]["reply"])
 
                 grants = client.get("/api/grants/top10").json()["grants"]
                 deadlines = _deadlines(grants)

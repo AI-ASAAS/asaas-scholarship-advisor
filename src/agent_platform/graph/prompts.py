@@ -104,6 +104,13 @@ def build_system_prompt(state: AgentState) -> str:
     history = _history_block(state.get("history") or [])
     if history:
         blocks.append(history)
+    deadline_fact = state.get("deadline_fact")
+    if deadline_fact:
+        if isinstance(deadline_fact, dict):
+            v = deadline_fact.get("verdict", "")
+        else:
+            v = getattr(deadline_fact, "verdict", str(deadline_fact))
+        blocks.append(f"VERIFIED DEADLINE FACT:\n{v}")
     blocks.append(
         "Reply language: "
         + ("Arabic." if language == "ar" else "English.")

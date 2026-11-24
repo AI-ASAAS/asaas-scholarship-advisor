@@ -137,6 +137,9 @@ class ToolContext:
     repository: GrantRepository
     documents: DocumentAgent
     profile_dirty: bool = False
+    user_date: tuple[int, int, int | None] | None = None
+    deadline_verdict: str | None = None
+    deadline_fact: Any = None
     _cards: dict[str, GrantCard] = field(default_factory=dict)
 
     def cards(self, limit: int = 50) -> list[GrantCard]:
@@ -243,11 +246,18 @@ def build_tools(ctx: ToolContext) -> list[BaseTool]:
                 ok=False,
                 summary=f"No verified grant matches {grant!r}.",
             )
+        data = card.model_dump(mode="json")
+        if ctx.deadline_verdict:
+            data["precomputed_deadline_verdict"] = ctx.deadline_verdict
+        if ctx.deadline_fact:
+            data["deadline_fact"] = ctx.deadline_fact
         return _envelope(
             "grant",
             summary=f"Details for {card.title}.",
-            data=card.model_dump(mode="json"),
+            data=data,
             sources=[card.official_url],
+            deadline_verdict=ctx.deadline_verdict,
+            deadline_fact=ctx.deadline_fact,
         )
 
     @tool
