@@ -149,6 +149,8 @@ def main() -> int:
                             f"grant={match['title']}"
                         )
 
+                print("reply4:", replies[3]["reply"][:600])
+
                 grants = client.get("/api/grants/top10").json()["grants"]
                 deadlines = _deadlines(grants)
                 dates = _extract_dates(replies[3]["reply"])
