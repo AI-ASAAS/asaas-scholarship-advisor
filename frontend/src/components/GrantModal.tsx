@@ -90,23 +90,86 @@ export function GrantModal({ grant, onClose, onPublish, publishing }: GrantModal
 
         {grant.description && (
           <div className="detail-section">
-            <h4>{t('modalDescription')}</h4>
+            <h3>{t('modalDescription')}</h3>
             <p className="prose" style={{ margin: 0, color: 'var(--text-2)' }}>
               {grant.description}
             </p>
           </div>
         )}
 
+        {(grant.host_country ||
+          (grant.allowed_degrees && grant.allowed_degrees.length > 0) ||
+          grant.min_gpa_value != null ||
+          grant.min_work_years != null ||
+          grant.max_age != null ||
+          (grant.language_requirements && grant.language_requirements.length > 0) ||
+          (grant.funding_type && grant.funding_type !== 'unknown') ||
+          (grant.nationality_rule && grant.nationality_rule.mode !== 'unclear')) && (
+          <div className="detail-section">
+            <h3>{t('structuredConditionsTitle')}</h3>
+            <div className="cluster">
+              {grant.host_country && (
+                <span className="pill pill--neutral">
+                  {t('hostCountryLabel')}: <strong>{grant.host_country}</strong>
+                </span>
+              )}
+              {grant.allowed_degrees && grant.allowed_degrees.length > 0 && (
+                <span className="pill pill--neutral">
+                  {t('degreesLabel')}: <strong>{grant.allowed_degrees.join(', ')}</strong>
+                </span>
+              )}
+              {grant.min_gpa_value != null && (
+                <span className="pill pill--neutral">
+                  {t('minGpaLabel')}:{' '}
+                  <strong className="num">
+                    {grant.min_gpa_value} ({grant.min_gpa_scale || ''})
+                  </strong>
+                </span>
+              )}
+              {grant.min_work_years != null && (
+                <span className="pill pill--neutral">
+                  {t('workYearsLabel')}: <strong className="num">{grant.min_work_years}</strong>
+                </span>
+              )}
+              {grant.max_age != null && (
+                <span className="pill pill--neutral">
+                  {t('maxAgeLabel')}: <strong className="num">{grant.max_age}</strong>
+                </span>
+              )}
+              {grant.language_requirements && grant.language_requirements.length > 0 && (
+                <span className="pill pill--neutral">
+                  {t('languagesLabel')}:{' '}
+                  <strong>
+                    {grant.language_requirements
+                      .map((l) => [l.language, l.test, l.min_score, l.cefr].filter(Boolean).join(' '))
+                      .join(' · ')}
+                  </strong>
+                </span>
+              )}
+              {grant.funding_type && grant.funding_type !== 'unknown' && (
+                <span className="pill pill--neutral">
+                  {t('fundingTypeLabel')}: <strong>{grant.funding_type}</strong>
+                </span>
+              )}
+              {grant.nationality_rule && grant.nationality_rule.mode !== 'unclear' && (
+                <span className="pill pill--neutral">
+                  {t('nationalityRuleLabel')}: <strong>{grant.nationality_rule.mode}</strong>
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
         {grant.funding && (
           <div className="detail-section">
-            <h4>{t('modalFunding')}</h4>
+            <h3>{t('modalFunding')}</h3>
             <div className="grant-card__funding">{grant.funding}</div>
           </div>
         )}
 
         {grant.eligibility && grant.eligibility.length > 0 && (
           <div className="detail-section">
-            <h4>{t('modalEligibility')}</h4>
+            <h3>{t('modalEligibility')}</h3>
             <ul className="detail-list">
               {grant.eligibility.map((item, i) => (
                 <li key={i}>{item}</li>
@@ -117,7 +180,7 @@ export function GrantModal({ grant, onClose, onPublish, publishing }: GrantModal
 
         {grant.fields_of_study && grant.fields_of_study.length > 0 && (
           <div className="detail-section">
-            <h4>{t('modalFields')}</h4>
+            <h3>{t('modalFields')}</h3>
             <div className="cluster">
               {grant.fields_of_study.map((f, i) => (
                 <span key={i} className="pill pill--neutral">
@@ -130,7 +193,7 @@ export function GrantModal({ grant, onClose, onPublish, publishing }: GrantModal
 
         {grant.required_documents && grant.required_documents.length > 0 && (
           <div className="detail-section">
-            <h4>{t('modalDocuments')}</h4>
+            <h3>{t('modalDocuments')}</h3>
             <ul className="detail-list">
               {grant.required_documents.map((doc, i) => (
                 <li key={i}>{doc}</li>
@@ -141,7 +204,7 @@ export function GrantModal({ grant, onClose, onPublish, publishing }: GrantModal
 
         {grant.how_to_apply && (
           <div className="detail-section">
-            <h4>{t('modalHowToApply')}</h4>
+            <h3>{t('modalHowToApply')}</h3>
             <p className="prose" style={{ margin: 0, color: 'var(--text-2)' }}>
               {grant.how_to_apply}
             </p>
@@ -150,7 +213,7 @@ export function GrantModal({ grant, onClose, onPublish, publishing }: GrantModal
 
         {evidenceEntries.length > 0 && (
           <div className="detail-section">
-            <h4>{t('modalEvidenceTitle')}</h4>
+            <h3>{t('modalEvidenceTitle')}</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {evidenceEntries.map(([field, quote]) => {
                 const isVerified = grant.field_verification?.[field] === 'verified';

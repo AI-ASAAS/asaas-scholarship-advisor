@@ -16,11 +16,12 @@ from utils.llm_extractor import (
 
 
 def test_load_prompt_loads_version_and_content():
-    """Ensure prompt is loaded with its version tag."""
+    """Ensure prompt is loaded with its version tag and untrusted data boundary."""
     content, version = load_prompt("extraction")
-    assert version == "extraction@1.0"
+    assert version == "extraction@2.0"
     assert "STRICT ANTI-HALLUCINATION RULES" in content
-    assert "YEMENI ELIGIBILITY" in content
+    assert "nationality_rule" in content
+    assert "<SOURCE_PAGE>" in content
 
 
 def test_grant_extraction_schema_validation():

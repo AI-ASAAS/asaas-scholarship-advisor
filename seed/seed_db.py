@@ -27,6 +27,7 @@ from core.db import get_db, init_db
 from core.models import Grant, GrantStatus, YemeniEligibilityStatus
 from core.repository import get_top_10_grants, publish, save_draft
 from ingestion_sub_agent import ingest
+from seed.structured_backfill import build_verified_backfill_map
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -386,6 +387,7 @@ def seed_database(publish_all: bool = False) -> List[Grant]:
     """
     init_db()
     seeded_grants: List[Grant] = []
+    backfill_map = build_verified_backfill_map()
 
     with get_db() as db:
         print("\n" + "=" * 80)
@@ -394,6 +396,30 @@ def seed_database(publish_all: bool = False) -> List[Grant]:
 
         for entry in VERIFIED_TOP10_BASELINE:
             payload = dict(entry)
+            backfill_rec = backfill_map.get(payload["official_url"])
+            if backfill_rec:
+                for key in (
+                    "provider_name",
+                    "host_country",
+                    "allowed_degrees",
+                    "min_gpa_value",
+                    "min_gpa_scale",
+                    "min_gpa_normalized_4",
+                    "language_requirements",
+                    "nationality_rule",
+                    "min_work_years",
+                    "max_age",
+                    "funding_type",
+                ):
+                    payload[key] = backfill_rec.get(key)
+                payload["evidence"] = {
+                    **(payload.get("evidence") or {}),
+                    **(backfill_rec.get("evidence_additions") or {}),
+                }
+                payload["field_verification"] = {
+                    **(payload.get("field_verification") or {}),
+                    **(backfill_rec.get("verification_additions") or {}),
+                }
             # Compute consistent content hash
             text_repr = f"{payload['title']} {payload['description']} {payload['funding']}"
             payload["content_hash"] = hashlib.sha256(text_repr.encode("utf-8")).hexdigest()

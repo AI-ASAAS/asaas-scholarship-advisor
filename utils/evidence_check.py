@@ -85,8 +85,70 @@ def verify_evidence(
         return sanitized_fields, field_verification
 
     for field, value in fields.items():
-        # Skip internal metadata fields
-        if field in {"id", "official_url", "content_hash", "last_checked_at", "created_at", "updated_at", "status"}:
+        # Skip internal metadata fields or paired GPA fields handled below
+        if field in {
+            "id",
+            "official_url",
+            "content_hash",
+            "last_checked_at",
+            "created_at",
+            "updated_at",
+            "status",
+            "featured_rank",
+            "min_gpa_normalized_4",
+        }:
+            continue
+
+        if field == "min_gpa_scale":
+            # Validated together with min_gpa_value below
+            continue
+
+        if field == "min_gpa_value":
+            gpa_scale = fields.get("min_gpa_scale")
+            if value is None and gpa_scale is None:
+                field_verification["min_gpa"] = "verified"
+                continue
+            quote = evidence.get("min_gpa") or evidence.get("min_gpa_value")
+            if value is not None and gpa_scale and quote and isinstance(quote, str) and is_quote_in_text(quote, page_text):
+                field_verification["min_gpa"] = "verified"
+            else:
+                sanitized_fields["min_gpa_value"] = None
+                sanitized_fields["min_gpa_scale"] = None
+                field_verification["min_gpa"] = "unverified"
+            continue
+
+        # Special handling for generic nationality_rule
+        if field == "nationality_rule":
+            rule_dict = dict(value) if isinstance(value, dict) else {}
+            mode = str(rule_dict.get("mode") or "unclear").lower()
+            if mode == "unclear":
+                sanitized_fields[field] = {"mode": "unclear", "countries": [], "groups": [], "evidence": None}
+                field_verification[field] = "verified"
+                continue
+            quote = evidence.get("nationality_rule") or evidence.get("accepts_yemeni") or evidence.get("eligibility")
+            if quote and isinstance(quote, str) and is_quote_in_text(quote, page_text):
+                rule_dict["evidence"] = quote
+                sanitized_fields[field] = rule_dict
+                field_verification[field] = "verified"
+            else:
+                sanitized_fields[field] = {"mode": "unclear", "countries": [], "groups": [], "evidence": None}
+                field_verification[field] = "unverified"
+            continue
+
+        # Special handling for funding_type
+        if field == "funding_type":
+            ft_val = str(value or "unknown").lower()
+            if ft_val == "unknown":
+                sanitized_fields[field] = "unknown"
+                field_verification[field] = "verified"
+                continue
+            quote = evidence.get("funding_type") or evidence.get("funding")
+            if quote and isinstance(quote, str) and is_quote_in_text(quote, page_text):
+                sanitized_fields[field] = ft_val
+                field_verification[field] = "verified"
+            else:
+                sanitized_fields[field] = "unknown"
+                field_verification[field] = "unverified"
             continue
 
         # If field is already None or empty, it is considered naturally empty
@@ -101,8 +163,8 @@ def verify_evidence(
                 sanitized_fields[field] = "unclear"
                 field_verification[field] = "verified"
                 continue
-            # For yes/no, check quote under accepts_yemeni or fallback to eligibility
-            quote = evidence.get("accepts_yemeni") or evidence.get("eligibility")
+            # For yes/no, check quote under accepts_yemeni, nationality_rule, or fallback to eligibility
+            quote = evidence.get("accepts_yemeni") or evidence.get("nationality_rule") or evidence.get("eligibility")
             if quote and isinstance(quote, str) and is_quote_in_text(quote, page_text):
                 sanitized_fields[field] = str_val
                 field_verification[field] = "verified"

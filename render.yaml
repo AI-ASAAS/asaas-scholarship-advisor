@@ -4,15 +4,25 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    healthCheckPath: /api/system/status
+    healthCheckPath: /api/health
     envVars:
+      - key: ENV
+        value: production
       - key: DATABASE_URL
         value: sqlite:///grants.db
+      - key: ADMIN_API_KEY
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: CORS_ORIGINS
+        value: ""
+      - key: LLM_PROVIDER
+        value: openrouter
       - key: LLM_MODEL
-        value: gemini-1.5-flash
+        value: google/gemini-2.0-flash-001
       - key: LLM_API_KEY
-        value: ""
+        sync: false
       - key: TAVILY_API_KEY
-        value: ""
+        sync: false
       - key: SERPER_API_KEY
-        value: ""
+        sync: false

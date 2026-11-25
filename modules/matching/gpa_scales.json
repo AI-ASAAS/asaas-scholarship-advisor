@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "yemeni_grade_labels_assumption": "Approximate 4.0-scale equivalents for Yemeni university grade labels; configurable without code changes pending ASAAS academic confirmation.",
+  "percentage_breakpoints": [
+    {"min": 90, "gpa_4": 3.85},
+    {"min": 80, "gpa_4": 3.35},
+    {"min": 70, "gpa_4": 2.75},
+    {"min": 65, "gpa_4": 2.30},
+    {"min": 50, "gpa_4": 1.80},
+    {"min": 0, "gpa_4": 1.00}
+  ],
+  "yemeni_labels": {
+    "ممتاز": 3.80,
+    "excellent": 3.80,
+    "جيد جداً": 3.30,
+    "جيد جدا": 3.30,
+    "very good": 3.30,
+    "جيد": 2.60,
+    "good": 2.60,
+    "مقبول": 2.00,
+    "pass": 2.00,
+    "fair": 2.00,
+    "ضعيف": 1.00,
+    "weak": 1.00
+  }
+}

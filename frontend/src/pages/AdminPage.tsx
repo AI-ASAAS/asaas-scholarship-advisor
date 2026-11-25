@@ -2,38 +2,37 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   ErrorState,
   Field,
   FormError,
-  PasswordInput,
+  Icon,
+  Modal,
   Segmented,
-  Select,
   Skeleton,
   Swash,
-  TextArea,
   TextInput,
   formatDate,
   useToast,
 } from '../asaas-ui';
+import { ApiKeysForm } from '../components/ApiKeysForm';
 import { ApiKeysModal } from '../components/ApiKeysModal';
 import { GrantModal } from '../components/GrantModal';
+import { ManualGrantForm } from '../components/ManualGrantForm';
 import {
   api,
   type Grant,
+  type GrantChangeReviewItem,
   type GrantCounts,
+  type GrantIngestPreviewResponse,
+  type KeyTestResponse,
   type SystemStatus,
-  type TelegramReport,
 } from '../lib/api';
 import { useLang } from '../lib/i18n';
 
 type StatusTab = 'all' | 'draft' | 'published' | 'expired';
-
-const SAMPLE_TELEGRAM_POST = `📢 عاجل للطلاب اليمنيين!
-فُتح التقديم لمنحة الحكومة التركية عبر الرابط الرسمي:
-https://www.turkiyeburslari.gov.tr/
-ومنحة جديدة في ألمانيا: https://www.daad.de/en/study-and-research-in-germany/scholarships/phd-fellowship/
-⚠️ روابط غير رسمية سيتم رفضها تلقائياً: https://scholarship-positions.com/fake-grant و https://t.me/yemen_scholarships`;
+type AddMode = 'ai' | 'manual';
 
 export default function AdminPage() {
   const { t } = useLang();
@@ -52,33 +51,43 @@ export default function AdminPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState<unknown>(null);
   const [selected, setSelected] = useState<Grant | null>(null);
+  const [editingGrant, setEditingGrant] = useState<Grant | null>(null);
+  const [confirmDeleteGrant, setConfirmDeleteGrant] = useState<Grant | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [publishingId, setPublishingId] = useState<number | null>(null);
+  const [featuringId, setFeaturingId] = useState<number | null>(null);
 
-  // Ingestion form state (includes inline manual LLM key & model)
+  // Add Grant mode + AI URL Ingestion state
+  const [addMode, setAddMode] = useState<AddMode>('ai');
   const [ingestUrl, setIngestUrl] = useState('');
-  const [llmKey, setLlmKey] = useState('');
-  const [llmModel, setLlmModel] = useState('gemini-2.0-flash');
   const [ingesting, setIngesting] = useState(false);
   const [ingestError, setIngestError] = useState<unknown>(null);
+  const [ingestPreview, setIngestPreview] = useState<GrantIngestPreviewResponse | null>(null);
 
-  // Telegram watcher state
-  const [telegramText, setTelegramText] = useState('');
-  const [scanningTg, setScanningTg] = useState(false);
-  const [tgError, setTgError] = useState<unknown>(null);
-  const [tgReport, setTgReport] = useState<TelegramReport | null>(null);
-
-  // System readiness
+  // System readiness & AI/Search keys
   const [sysStatus, setSysStatus] = useState<SystemStatus | null>(null);
+  const [showKeysCard, setShowKeysCard] = useState(false);
   const [showKeysModal, setShowKeysModal] = useState(false);
+  const [testingKeys, setTestingKeys] = useState(false);
+  const [keyTestResult, setKeyTestResult] = useState<KeyTestResponse | null>(null);
+
+  // Monitor change reviews
+  const [reviews, setReviews] = useState<GrantChangeReviewItem[]>([]);
+  const [reviewBusyId, setReviewBusyId] = useState<number | null>(null);
 
   const loadGrants = useCallback(async (statusFilter: StatusTab) => {
     setLoadingList(true);
     setListError(null);
     try {
-      const [res, st] = await Promise.all([api.listGrants(statusFilter), api.getSystemStatus()]);
+      const [res, st, revRes] = await Promise.all([
+        api.listGrants(statusFilter),
+        api.getSystemStatus(),
+        api.listMonitorReviews('pending').catch(() => ({ count: 0, reviews: [] })),
+      ]);
       setGrants(res.grants);
       setCounts(res.counts);
       setSysStatus(st);
+      setReviews(revRes.reviews);
     } catch (err) {
       setListError(err);
     } finally {
@@ -95,16 +104,8 @@ export default function AdminPage() {
     setIngestError(null);
     setIngesting(true);
     try {
-      const created = await api.ingestUrl({
-        official_url: ingestUrl,
-        llm_api_key: llmKey.trim() || undefined,
-        llm_model: llmModel,
-      });
-      toast(`تم استخلاص "${created.title}" كمسودة للمراجعة`);
-      setIngestUrl('');
-      setLlmKey('');
-      setSelected(created);
-      await loadGrants(tab);
+      const preview = await api.previewIngestUrl({ official_url: ingestUrl });
+      setIngestPreview(preview);
     } catch (err) {
       setIngestError(err);
     } finally {
@@ -126,27 +127,69 @@ export default function AdminPage() {
     }
   }
 
-  async function handleTelegramScan(e: FormEvent) {
-    e.preventDefault();
-    const posts = telegramText
-      .split(/\n{2,}/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-    if (posts.length === 0) return;
-
-    setTgError(null);
-    setScanningTg(true);
+  async function handleSetFeatured(grantId: number, rawValue: string) {
+    const parsedRank = rawValue === '' ? null : Number(rawValue);
+    setFeaturingId(grantId);
     try {
-      const report = await api.processTelegram(posts, !sysStatus?.llm_configured);
-      setTgReport(report);
-      toast(`تم فحص ${report.urls_extracted} رابطاً (${report.trusted_urls_found} رسمي)`);
-      if (report.drafts_created.length > 0) {
-        await loadGrants(tab);
+      const updated = await api.setFeaturedRank(grantId, parsedRank);
+      toast(t('featuredSaved'));
+      if (selected?.id === grantId) {
+        setSelected(updated);
       }
+      await loadGrants(tab);
     } catch (err) {
-      setTgError(err);
+      toast(err instanceof Error ? err.message : 'تعذّر تحديث الأولوية.', 'error');
     } finally {
-      setScanningTg(false);
+      setFeaturingId(null);
+    }
+  }
+
+  async function handleDeleteGrant(grant: Grant) {
+    setDeletingId(grant.id);
+    try {
+      await api.deleteGrant(grant.id);
+      toast(t('grantDeletedToast'));
+      setConfirmDeleteGrant(null);
+      if (selected?.id === grant.id) {
+        setSelected(null);
+      }
+      await loadGrants(tab);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('docsGenericError'), 'error');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleReviewDecision(reviewId: number, decision: 'approve' | 'reject') {
+    setReviewBusyId(reviewId);
+    try {
+      if (decision === 'approve') {
+        await api.approveMonitorReview(reviewId);
+        toast(t('reviewApprovedToast'));
+      } else {
+        await api.rejectMonitorReview(reviewId);
+        toast(t('reviewRejectedToast'));
+      }
+      setReviews((prev) => prev.filter((item) => item.id !== reviewId));
+      await loadGrants(tab);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('docsGenericError'), 'error');
+    } finally {
+      setReviewBusyId(null);
+    }
+  }
+
+  async function handleTestActiveKeys() {
+    setTestingKeys(true);
+    try {
+      const res = await api.testActiveKeys();
+      setKeyTestResult(res);
+      toast(res.llm_message, res.llm_ok ? undefined : 'error');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('docsGenericError'), 'error');
+    } finally {
+      setTestingKeys(false);
     }
   }
 
@@ -161,47 +204,105 @@ export default function AdminPage() {
             {t('adminSubtitle')}
           </p>
         </div>
-        <Button variant="glass" icon="vault" onClick={() => setShowKeysModal(true)}>
-          {t('apiKeysBtn')}
-        </Button>
+        {sysStatus?.dev_keys_enabled && (
+          <Button
+            variant="glass"
+            icon="vault"
+            onClick={() => setShowKeysCard((prev) => !prev)}
+          >
+            {t('apiKeysBtn')}
+          </Button>
+        )}
       </div>
 
-      <div className="grid grid--halves">
-        {/* Agentic URL Scraper with inline manual LLM API Key entry */}
-        <Card title={t('ingestCardTitle')} icon="sparkle">
-          <form className="form" onSubmit={handleIngest}>
-            <div className="form__row">
-              <Field
-                label={t('apiKeyLlm')}
-                hint={
-                  sysStatus?.llm_key_hint
-                    ? `${t('readyYes')}: ${sysStatus.llm_key_hint}`
-                    : t('apiKeyLlmHint')
-                }
+      {/* AI & Deep Search Keys Configuration Card */}
+      {sysStatus && (
+        <Card
+          title={t('apiKeysTitle')}
+          icon="vault"
+          actions={
+            <div className="cluster">
+              <Button
+                size="sm"
+                variant="glass"
+                icon="checkCircle"
+                loading={testingKeys}
+                onClick={() => void handleTestActiveKeys()}
               >
-                {(id) => (
-                  <PasswordInput
-                    id={id}
-                    autoComplete="off"
-                    placeholder={sysStatus?.llm_key_hint || 'AIzaSy... / sk-...'}
-                    value={llmKey}
-                    onChange={(e) => setLlmKey(e.target.value)}
-                  />
-                )}
-              </Field>
-              <Field label={t('apiKeyModel')}>
-                {(id) => (
-                  <Select id={id} value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>
-                    <option value="gemini-2.0-flash">gemini-2.0-flash</option>
-                    <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                    <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-                    <option value="gpt-4o-mini">gpt-4o-mini</option>
-                    <option value="gpt-4o">gpt-4o</option>
-                    <option value="openrouter/google/gemini-2.0-flash-001">openrouter/gemini-2.0-flash</option>
-                  </Select>
-                )}
-              </Field>
+                {t('apiKeyTestBtn')}
+              </Button>
+              {sysStatus.dev_keys_enabled && (
+                <Button
+                  size="sm"
+                  variant="glass"
+                  onClick={() => setShowKeysCard((prev) => !prev)}
+                >
+                  {showKeysCard ? t('btnCancelAddLanguage') : t('apiKeysBtn')}
+                </Button>
+              )}
             </div>
+          }
+        >
+          <div className="cluster" style={{ marginBottom: showKeysCard || keyTestResult ? 12 : 0 }}>
+            <span className={sysStatus.llm_configured ? 'pill pill--paid' : 'pill pill--partial'}>
+              <Icon name={sysStatus.llm_configured ? 'checkCircle' : 'alert'} />
+              {sysStatus.llm_configured ? t('readyYes') : t('readyNo')}: {sysStatus.llm_provider || 'gemini'} ·{' '}
+              <span dir="ltr">{sysStatus.llm_model}</span>
+              {sysStatus.llm_key_hint ? (
+                <span dir="ltr"> ({sysStatus.llm_key_hint})</span>
+              ) : null}
+            </span>
+            <span className={sysStatus.search_configured ? 'pill pill--paid' : 'pill pill--partial'}>
+              <Icon name={sysStatus.search_configured ? 'checkCircle' : 'alert'} />
+              {t('navSearch')}: {sysStatus.search_provider ?? t('readyNo')}
+              {sysStatus.tavily_key_hint
+                ? ` (${sysStatus.tavily_key_hint})`
+                : sysStatus.serper_key_hint
+                  ? ` (${sysStatus.serper_key_hint})`
+                  : ''}
+            </span>
+          </div>
+
+          {keyTestResult && (
+            <div className="quote-box" style={{ marginBottom: showKeysCard ? 12 : 0, display: 'grid', gap: 4 }}>
+              <strong style={{ color: keyTestResult.llm_ok ? 'var(--ok, #1a7f37)' : 'var(--danger)' }}>
+                {keyTestResult.llm_message}
+              </strong>
+              <span className="subtle">{keyTestResult.search_message}</span>
+            </div>
+          )}
+
+          {sysStatus.dev_keys_enabled && showKeysCard && (
+            <ApiKeysForm
+              status={sysStatus}
+              onSaved={(updated) => {
+                setSysStatus(updated);
+                setKeyTestResult(null);
+                setShowKeysCard(false);
+              }}
+            />
+          )}
+        </Card>
+      )}
+
+      {/* Dual Add Grant Card: AI URL Scrape OR Manual Entry */}
+      <Card
+        title={t('ingestCardTitle')}
+        icon="sparkle"
+        actions={
+          <Segmented
+            label={t('adminAddModeLabel')}
+            value={addMode}
+            onChange={(val) => setAddMode(val as AddMode)}
+            options={[
+              { value: 'ai', label: t('adminAddModeAi') },
+              { value: 'manual', label: t('adminAddModeManual') },
+            ]}
+          />
+        }
+      >
+        {addMode === 'ai' ? (
+          <form className="form" onSubmit={handleIngest}>
             <Field label={t('fieldOfficialUrl')} hint={t('fieldOfficialUrlHint')}>
               {(id) => (
                 <TextInput
@@ -222,87 +323,68 @@ export default function AdminPage() {
               </Button>
             </div>
           </form>
-        </Card>
+        ) : (
+          <ManualGrantForm
+            mode="create"
+            onSaved={async (created) => {
+              setSelected(created);
+              await loadGrants(tab);
+            }}
+          />
+        )}
+      </Card>
 
-        {/* Phase 8: Telegram Channel Watcher */}
-        <Card
-          title={t('telegramCardTitle')}
-          icon="send"
-          actions={
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setTelegramText(SAMPLE_TELEGRAM_POST)}
-            >
-              {t('telegramSampleBtn')}
-            </Button>
-          }
-        >
-          <form className="form" onSubmit={handleTelegramScan}>
-            <Field label={t('telegramCardTitle')} hint={t('telegramHint')}>
-              {(id) => (
-                <TextArea
-                  id={id}
-                  rows={4}
-                  required
-                  value={telegramText}
-                  onChange={(e) => setTelegramText(e.target.value)}
-                  placeholder="https://..."
-                />
-              )}
-            </Field>
-            <FormError error={tgError} />
-            <div className="cluster">
-              <Button type="submit" variant="glass" icon="search" loading={scanningTg}>
-                {t('btnTelegramScan')}
-              </Button>
-            </div>
-          </form>
-
-          {tgReport && (
-            <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {tgReport.note && <div className="notice-banner">{tgReport.note}</div>}
-              <div className="cluster">
-                <span className="pill pill--paid">
-                  رسمي: <span className="num">{tgReport.trusted_urls_found}</span>
-                </span>
-                <span className="pill pill--partial">
-                  مسجّل مسبقاً: <span className="num">{tgReport.skipped_existing.length}</span>
-                </span>
-                <span className="pill pill--unpaid">
-                  مرفوض غير رسمي: <span className="num">{tgReport.skipped_untrusted.length}</span>
-                </span>
+      {/* Monitor Change Review Queue */}
+      <Card title={t('reviewQueueTitle')} icon="alert">
+        {reviews.length === 0 ? (
+          <EmptyState icon="checkCircle" title={t('reviewQueueTitle')}>
+            {t('reviewQueueEmpty')}
+          </EmptyState>
+        ) : (
+          <div className="list">
+            {reviews.map((rev) => (
+              <div key={rev.id} className="row row--stack">
+                <div className="row__main">
+                  <div className="row__title">{rev.grant_title || `Grant #${rev.grant_id}`}</div>
+                  <div className="subtle" style={{ marginTop: 4 }}>
+                    {rev.summary_ar}
+                  </div>
+                  <div className="row__meta row__meta--wrap" style={{ marginTop: 6 }}>
+                    <span className="pill pill--neutral">{rev.field_name}</span>
+                    {rev.new_value && (
+                      <code className="subtle" style={{ wordBreak: 'break-all' }}>
+                        {rev.new_value}
+                      </code>
+                    )}
+                  </div>
+                </div>
+                <div className="row__actions">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    icon="check"
+                    loading={reviewBusyId === rev.id}
+                    onClick={() => void handleReviewDecision(rev.id, 'approve')}
+                  >
+                    {t('reviewApproveBtn')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="glass"
+                    icon="close"
+                    loading={reviewBusyId === rev.id}
+                    onClick={() => void handleReviewDecision(rev.id, 'reject')}
+                  >
+                    {t('reviewRejectBtn')}
+                  </Button>
+                </div>
               </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
-              {tgReport.ready_for_ingest && tgReport.ready_for_ingest.length > 0 && (
-                <div className="quote-box">
-                  <strong>روابط رسمية جديدة جاهزة للاستخلاص:</strong>
-                  <ul className="detail-list" style={{ marginTop: 6 }}>
-                    {tgReport.ready_for_ingest.map((u) => (
-                      <li key={u} dir="ltr">
-                        {u}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {tgReport.skipped_untrusted.length > 0 && (
-                <div className="subtle">
-                  <strong>روابط مرفوضة:</strong>
-                  {tgReport.skipped_untrusted.map((item, i) => (
-                    <div key={i} dir="ltr">
-                      ✗ {item.url} — {item.reason}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Review & Publish Queue */}
+      {/* Grant Management Queue (All / Drafts / Published / Expired) */}
       <Card
         title={t('reviewCardTitle')}
         icon="briefcase"
@@ -320,6 +402,12 @@ export default function AdminPage() {
           />
         }
       >
+        {tab === 'expired' && (
+          <div className="notice-banner" style={{ marginBottom: 14 }}>
+            <span className="subtle">{t('expiredAutoNotice')}</span>
+          </div>
+        )}
+
         {loadingList && <Skeleton height={64} count={4} />}
         {!loadingList && listError ? (
           <ErrorState error={listError} onRetry={() => void loadGrants(tab)} />
@@ -359,11 +447,38 @@ export default function AdminPage() {
                         {grant.deadline ? formatDate(grant.deadline) : t('rollingDeadline')}
                       </span>
                     </span>
+                    {grant.featured_rank != null && (
+                      <span className="pill pill--paid">
+                        {t('featuredBadge')} <span className="num">#{grant.featured_rank}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="row__actions">
+                  <select
+                    className="input featured-select"
+                    aria-label={`${t('featuredRankLabel')}: ${grant.title}`}
+                    value={grant.featured_rank ?? ''}
+                    disabled={featuringId === grant.id || grant.status === 'expired'}
+                    onChange={(e) => void handleSetFeatured(grant.id, e.target.value)}
+                  >
+                    <option value="">{t('featuredAuto')}</option>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rank) => (
+                      <option key={rank} value={rank}>
+                        {t('featuredRankLabel')} #{rank}
+                      </option>
+                    ))}
+                  </select>
                   <Button size="sm" variant="glass" onClick={() => setSelected(grant)}>
                     {t('viewDetails')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="glass"
+                    icon="edit"
+                    onClick={() => setEditingGrant(grant)}
+                  >
+                    {t('btnEditGrant')}
                   </Button>
                   {grant.status === 'draft' && (
                     <Button
@@ -376,6 +491,15 @@ export default function AdminPage() {
                       {t('btnPublish')}
                     </Button>
                   )}
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    icon="trash"
+                    loading={deletingId === grant.id}
+                    onClick={() => setConfirmDeleteGrant(grant)}
+                  >
+                    {t('btnDeleteGrant')}
+                  </Button>
                 </div>
               </div>
             ))}
@@ -392,7 +516,110 @@ export default function AdminPage() {
         />
       )}
 
-      {showKeysModal && (
+      {ingestPreview && (
+        <Modal
+          wide
+          title={`${t('ingestPreviewModalTitle')}: ${ingestPreview.title}`}
+          onClose={() => setIngestPreview(null)}
+        >
+          <div style={{ display: 'grid', gap: 16 }}>
+            <div className="quote-box" style={{ display: 'grid', gap: 6 }}>
+              <strong>
+                {ingestPreview.already_exists_id
+                  ? t('ingestPreviewAlreadyExistsHint')
+                  : t('ingestPreviewHint')}
+              </strong>
+              {Object.keys(ingestPreview.evidence || {}).length > 0 && (
+                <div style={{ display: 'grid', gap: 4, marginTop: 4 }}>
+                  <span className="subtle" style={{ fontWeight: 600 }}>
+                    {t('ingestPreviewEvidenceTitle')}:
+                  </span>
+                  {Object.entries(ingestPreview.evidence).map(([field, quote]) => (
+                    <div key={field} className="subtle" style={{ fontSize: 13 }}>
+                      <code dir="ltr">{field}</code>: &ldquo;{quote}&rdquo;
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <ManualGrantForm
+              key={`${ingestPreview.official_url}-${ingestPreview.already_exists_id ?? 'new'}`}
+              mode={ingestPreview.already_exists_id ? 'edit' : 'create'}
+              submitLabel={
+                ingestPreview.already_exists_id ? undefined : t('ingestPreviewSubmitCreate')
+              }
+              initialGrant={{
+                id: ingestPreview.already_exists_id ?? 0,
+                title: ingestPreview.title,
+                official_url: ingestPreview.official_url,
+                description: ingestPreview.description ?? null,
+                eligibility: ingestPreview.eligibility ?? null,
+                criteria: ingestPreview.criteria ?? null,
+                fields_of_study: ingestPreview.fields_of_study ?? null,
+                funding: ingestPreview.funding ?? null,
+                required_documents: ingestPreview.required_documents ?? null,
+                deadline: ingestPreview.deadline ?? null,
+                how_to_apply: ingestPreview.how_to_apply ?? null,
+                accepts_yemeni: ingestPreview.accepts_yemeni,
+                provider_name: ingestPreview.provider_name ?? null,
+                host_country: ingestPreview.host_country ?? null,
+                allowed_degrees: ingestPreview.allowed_degrees ?? null,
+                min_gpa_value: ingestPreview.min_gpa_value ?? null,
+                min_gpa_scale: ingestPreview.min_gpa_scale ?? null,
+                min_gpa_normalized_4: ingestPreview.min_gpa_normalized_4 ?? null,
+                funding_type: ingestPreview.funding_type ?? null,
+                evidence: ingestPreview.evidence || {},
+                field_verification: ingestPreview.field_verification || {},
+                status: ingestPreview.already_exists_status || 'draft',
+                content_hash: null,
+                last_checked_at: null,
+                created_at: null,
+                updated_at: null,
+              }}
+              onSaved={async (saved) => {
+                setIngestPreview(null);
+                setIngestUrl('');
+                setSelected(saved);
+                await loadGrants(tab);
+              }}
+              onCancel={() => setIngestPreview(null)}
+            />
+          </div>
+        </Modal>
+      )}
+
+      {editingGrant && (
+        <Modal
+          wide
+          title={`${t('editGrantModalTitle')}: ${editingGrant.title}`}
+          onClose={() => setEditingGrant(null)}
+        >
+          <ManualGrantForm
+            mode="edit"
+            initialGrant={editingGrant}
+            onSaved={async () => {
+              setEditingGrant(null);
+              await loadGrants(tab);
+            }}
+            onCancel={() => setEditingGrant(null)}
+          />
+        </Modal>
+      )}
+
+      {confirmDeleteGrant && (
+        <ConfirmDialog
+          title={t('deleteGrantConfirmTitle')}
+          confirmLabel={t('btnDeleteGrant')}
+          pending={deletingId === confirmDeleteGrant.id}
+          onConfirm={() => void handleDeleteGrant(confirmDeleteGrant)}
+          onClose={() => setConfirmDeleteGrant(null)}
+        >
+          {t('deleteGrantConfirmBody')} (<strong>{confirmDeleteGrant.title}</strong>)
+        </ConfirmDialog>
+      )}
+
+      {showKeysModal && sysStatus?.dev_keys_enabled && (
         <ApiKeysModal
           status={sysStatus}
           onClose={() => setShowKeysModal(false)}

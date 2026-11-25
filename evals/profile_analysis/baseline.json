@@ -1,0 +1,62 @@
+{
+  "pa-01-ye-master-ielts": {
+    "passed": true,
+    "failures": [],
+    "ms": 11811
+  },
+  "pa-02-ye-bachelor-no-lang": {
+    "passed": true,
+    "failures": [],
+    "ms": 3112
+  },
+  "pa-03-non-ye-french-eu": {
+    "passed": true,
+    "failures": [],
+    "ms": 3225
+  },
+  "pa-04-ye-phd-high-gpa": {
+    "passed": true,
+    "failures": [],
+    "ms": 16861
+  },
+  "pa-05-ye-label-gpa-missing-age": {
+    "passed": true,
+    "failures": [],
+    "ms": 6932
+  },
+  "pa-06-pii-in-notes-scrubbed": {
+    "passed": true,
+    "failures": [],
+    "ms": 6321
+  },
+  "pa-07-low-gpa-master": {
+    "passed": true,
+    "failures": [],
+    "ms": 1221
+  },
+  "pa-08-jordanian-master-toefl": {
+    "passed": true,
+    "failures": [],
+    "ms": 1927
+  },
+  "pa-09-over-age-bachelor": {
+    "passed": true,
+    "failures": [],
+    "ms": 4892
+  },
+  "pa-10-minimal-profile-only-degree": {
+    "passed": true,
+    "failures": [],
+    "ms": 6578
+  },
+  "pa-11-self-assessed-english-only": {
+    "passed": true,
+    "failures": [],
+    "ms": 1964
+  },
+  "pa-12-egyptian-phd-experience": {
+    "passed": true,
+    "failures": [],
+    "ms": 1654
+  }
+}

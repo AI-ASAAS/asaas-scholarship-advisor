@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Button,
+  Card,
   EmptyState,
   ErrorState,
   Glass,
@@ -13,6 +15,7 @@ import {
 } from '../asaas-ui';
 import { GrantModal } from '../components/GrantModal';
 import { api, safeHref, type Grant, type SystemStatus } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { useLang } from '../lib/i18n';
 
 function computeDaysLeft(deadline: string | null): number | null {
@@ -26,6 +29,7 @@ function computeDaysLeft(deadline: string | null): number | null {
 
 export default function Top10Page() {
   const { t } = useLang();
+  const { authenticated } = useAuth();
   const [grants, setGrants] = useState<Grant[]>([]);
   const [sysStatus, setSysStatus] = useState<SystemStatus | null>(null);
   const [query, setQuery] = useState('');
@@ -37,15 +41,20 @@ export default function Top10Page() {
     setLoading(true);
     setError(null);
     try {
-      const [top10, status] = await Promise.all([api.getTop10(), api.getSystemStatus()]);
+      const top10 = await api.getTop10();
       setGrants(top10);
-      setSysStatus(status);
+      if (authenticated) {
+        const status = await api.getSystemStatus().catch(() => null);
+        setSysStatus(status);
+      } else {
+        setSysStatus(null);
+      }
     } catch (err) {
       setError(err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authenticated]);
 
   useEffect(() => {
     void loadData();
@@ -72,6 +81,16 @@ export default function Top10Page() {
     [grants],
   );
 
+  const totalVerifiedQuotes = useMemo(
+    () =>
+      grants.reduce(
+        (acc, g) =>
+          acc + Object.values(g.field_verification || {}).filter((v) => v === 'verified').length,
+        0,
+      ),
+    [grants],
+  );
+
   return (
     <div className="page">
       <div className="toolbar">
@@ -88,7 +107,28 @@ export default function Top10Page() {
         </Button>
       </div>
 
-      {sysStatus && (
+      <Card className="advisor-cta-card">
+        <div className="advisor-cta">
+          <div className="advisor-cta__copy">
+            <strong>{t('ctaProfileTitle')}</strong>
+            <p className="muted" style={{ margin: '4px 0 0' }}>
+              {t('ctaProfileBody')}
+            </p>
+          </div>
+          <div className="cluster">
+            <Link to="/profile" className="btn btn--primary">
+              <Icon name="users" />
+              {t('ctaBuildProfileBtn')}
+            </Link>
+            <Link to="/matches" className="btn btn--glass">
+              <Icon name="trend" />
+              {t('ctaViewMatchesBtn')}
+            </Link>
+          </div>
+        </div>
+      </Card>
+
+      {sysStatus ? (
         <div className="grid grid--stats grid--stats--4">
           <Stat
             label={t('statPublished')}
@@ -115,6 +155,29 @@ export default function Top10Page() {
             unit={t('unitLog')}
           />
         </div>
+      ) : (
+        grants.length > 0 && (
+          <div className="grid grid--stats">
+            <Stat
+              label={t('statPublished')}
+              icon="checkCircle"
+              amount={grants.length}
+              unit={t('unitGrant')}
+            />
+            <Stat
+              label={t('statYemenReady')}
+              icon="sparkle"
+              amount={yemenCount}
+              unit={t('unitGrant')}
+            />
+            <Stat
+              label={t('statVerifiedQuotes')}
+              icon="check"
+              amount={totalVerifiedQuotes}
+              unit={t('verifiedFields')}
+            />
+          </div>
+        )
       )}
 
       <div className="search-box">
@@ -155,6 +218,12 @@ export default function Top10Page() {
                 </div>
 
                 <div className="grant-meta">
+                  {grant.featured_rank != null && (
+                    <span className="pill pill--paid">
+                      <Icon name="sparkle" />
+                      {t('featuredBadge')} <span className="num">#{grant.featured_rank}</span>
+                    </span>
+                  )}
                   <span
                     className={
                       grant.accepts_yemeni === 'yes'

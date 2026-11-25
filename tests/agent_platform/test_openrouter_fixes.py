@@ -146,7 +146,7 @@ def test_permanent_error_opens_breaker_for_process_and_sets_health(tmp_path: Pat
     assert "401" in llm.circuit.config_error()
 
     # Verify /health reflects the permanent config error
-    runtime = Runtime(memory_path=tmp_path / "sessions.db")
+    runtime = Runtime(memory_path=tmp_path / "sessions.db", grants_path=tmp_path / "grants.db")
     with TestClient(create_app(runtime)) as client:
         health = client.get("/health").json()
         assert health["llm_available"] is False
@@ -184,7 +184,7 @@ def test_account_quota_error_opens_breaker_for_reported_delay(tmp_path: Path) ->
     assert llm.circuit.config_error() is None  # not a permanent config error
     assert 60.0 < llm.circuit.retry_after_seconds() <= 120.0
 
-    runtime = Runtime(memory_path=tmp_path / "sessions.db")
+    runtime = Runtime(memory_path=tmp_path / "sessions.db", grants_path=tmp_path / "grants.db")
     with TestClient(create_app(runtime)) as client:
         health = client.get("/health").json()
         assert health["llm_available"] is False

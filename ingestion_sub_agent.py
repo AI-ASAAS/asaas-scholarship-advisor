@@ -4,7 +4,7 @@ Transforms any official scholarship URL into a fully populated, grounded
 draft Grant object ready for administrative review.
 
 Key features:
-1. Resilient page fetcher: Uses Playwright / httpx fallback.
+1. SSRF-guarded page fetcher using shared url_guard and httpx.
 2. Single-sublink crawler: Traverses 1 level depth within the same domain
    for eligibility/funding details.
 3. Anti-hallucination verification: Verifies extracted quotes against page text.
@@ -22,9 +22,12 @@ from sqlalchemy.orm import Session
 from core.db import get_db
 from core.models import Grant, GrantStatus, YemeniEligibilityStatus
 from core.repository import save_draft
+from modules.matching.gpa import normalize_gpa_to_4
+from modules.matching.nationalities import evaluate_nationality
 from utils.evidence_check import verify_evidence
 from utils.llm_extractor import GrantExtractionSchema, LLMClient, extract_grant_from_text
-from utils.url_validator import validate_official_url
+from utils.url_guard import ResolveFn, safe_request, validate_outbound_url
+from utils.url_validator import is_trusted_domain, validate_official_url
 
 logger = logging.getLogger(__name__)
 
@@ -115,43 +118,48 @@ def find_relevant_sublink(base_url: str, links: List[Dict[str, str]]) -> Optiona
     return None
 
 
-def fetch_page(url: str, timeout: float = 15.0) -> Tuple[str, List[Dict[str, str]]]:
-    """Fetch webpage content and return clean text plus links."""
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36 DiscoveryAgent/1.0"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    }
+def fetch_page(
+    url: str,
+    timeout: float = 15.0,
+    *,
+    client: Optional[httpx.Client] = None,
+    resolve_fn: Optional[ResolveFn] = None,
+    require_trusted_domain: bool = False,
+) -> Tuple[str, List[Dict[str, str]]]:
+    """Fetch webpage content safely through the SSRF guard and return clean text + links."""
+    def _hop_check(hop_url: str) -> None:
+        if require_trusted_domain:
+            ok, reason = is_trusted_domain(hop_url)
+            if not ok:
+                raise ValueError(reason)
 
-    with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
-        response = client.get(url)
-        response.raise_for_status()
-        return extract_text_and_links(response.text, base_url=str(response.url))
+    result = safe_request(
+        "GET",
+        url,
+        client=client,
+        resolve_fn=resolve_fn,
+        timeout=timeout,
+        hop_validator=_hop_check if require_trusted_domain else None,
+    )
+    if result.status_code >= 400:
+        req = httpx.Request("GET", result.final_url)
+        resp = httpx.Response(result.status_code, request=req)
+        raise httpx.HTTPStatusError(
+            f"HTTP {result.status_code} while fetching {result.final_url}",
+            request=req,
+            response=resp,
+        )
+    return extract_text_and_links(result.text, base_url=result.final_url)
 
 
-def ingest(
+def extract_grant_preview(
     official_url: str,
-    db: Optional[Session] = None,
     client: Optional[LLMClient] = None,
     page_html_override: Optional[str] = None,
     skip_url_validation: bool = False,
-) -> Grant:
-    """Ingest an official scholarship URL and convert it into a verified draft Grant.
-
-    Args:
-        official_url: Verified official URL of the scholarship.
-        db: Optional SQLAlchemy Session. If None, uses get_db() context.
-        client: Optional LLMClient instance (can be mock or custom).
-        page_html_override: Optional raw HTML string for offline unit testing without network.
-        skip_url_validation: If True, bypasses network url_validator (useful for tests).
-
-    Returns:
-        Grant instance saved in DRAFT status.
-    """
-    logger.info("Starting ingestion for URL: %s", official_url)
+) -> Dict[str, Any]:
+    """Fetch, validate, extract, and verify a scholarship URL WITHOUT saving to DB."""
+    logger.info("Starting ingestion extraction for URL: %s", official_url)
 
     # 1. Official URL validation
     if not skip_url_validation:
@@ -166,7 +174,7 @@ def ingest(
     if page_html_override is not None:
         main_text, links = extract_text_and_links(page_html_override, base_url=official_url)
     else:
-        main_text, links = fetch_page(official_url)
+        main_text, links = fetch_page(official_url, require_trusted_domain=not skip_url_validation)
         # 3. Follow at most one relevant sub-link (same domain, 1 level depth)
         sublink_url = find_relevant_sublink(official_url, links)
 
@@ -175,8 +183,9 @@ def ingest(
     # Crawl sublink if discovered
     if sublink_url:
         try:
+            validate_outbound_url(sublink_url)
             logger.info("Found relevant sub-link: %s. Fetching additional criteria...", sublink_url)
-            sub_text, _ = fetch_page(sublink_url)
+            sub_text, _ = fetch_page(sublink_url, require_trusted_domain=not skip_url_validation)
             combined_text += f"\n\n--- ADDITIONAL DETAILS FROM SUB-PAGE ({sublink_url}) ---\n{sub_text}"
         except Exception as exc:
             logger.warning("Could not fetch sublink %s: %s", sublink_url, exc)
@@ -198,6 +207,20 @@ def ingest(
         "deadline": extraction.deadline,
         "how_to_apply": extraction.how_to_apply,
         "accepts_yemeni": extraction.accepts_yemeni,
+        "provider_name": extraction.provider_name,
+        "host_country": extraction.host_country,
+        "allowed_degrees": extraction.allowed_degrees,
+        "min_gpa_value": extraction.min_gpa_value,
+        "min_gpa_scale": extraction.min_gpa_scale,
+        "language_requirements": (
+            [item.model_dump() for item in extraction.language_requirements]
+            if extraction.language_requirements
+            else None
+        ),
+        "nationality_rule": extraction.nationality_rule.model_dump(),
+        "min_work_years": extraction.min_work_years,
+        "max_age": extraction.max_age,
+        "funding_type": extraction.funding_type,
     }
 
     # 6. Anti-hallucination verification: check evidence quotes in combined text
@@ -216,8 +239,22 @@ def ingest(
         except (ValueError, TypeError):
             parsed_date = None
 
-    # 8. Prepare payload for repository
-    grant_payload = {
+    verified_nat_rule = sanitized_fields.get("nationality_rule")
+    yemen_status = sanitized_fields.get("accepts_yemeni") or "unclear"
+    if (
+        yemen_status == "unclear"
+        and isinstance(verified_nat_rule, dict)
+        and verified_nat_rule.get("mode") not in (None, "unclear")
+    ):
+        yemen_status = evaluate_nationality("YE", verified_nat_rule)
+
+    min_gpa_value = sanitized_fields.get("min_gpa_value")
+    min_gpa_scale = sanitized_fields.get("min_gpa_scale")
+    normalized_gpa = normalize_gpa_to_4(min_gpa_value, min_gpa_scale)
+
+    yemen_str = yemen_status.value if hasattr(yemen_status, "value") else str(yemen_status)
+
+    return {
         "title": sanitized_fields.get("title") or extraction.title or "Untitled Scholarship",
         "official_url": official_url,
         "description": sanitized_fields.get("description"),
@@ -228,17 +265,40 @@ def ingest(
         "required_documents": sanitized_fields.get("required_documents"),
         "deadline": parsed_date,
         "how_to_apply": sanitized_fields.get("how_to_apply"),
-        "accepts_yemeni": sanitized_fields.get("accepts_yemeni") or YemeniEligibilityStatus.UNCLEAR,
+        "accepts_yemeni": yemen_str or "unclear",
+        "provider_name": sanitized_fields.get("provider_name"),
+        "host_country": sanitized_fields.get("host_country"),
+        "allowed_degrees": sanitized_fields.get("allowed_degrees"),
+        "min_gpa_value": min_gpa_value,
+        "min_gpa_scale": min_gpa_scale,
+        "min_gpa_normalized_4": normalized_gpa,
+        "language_requirements": sanitized_fields.get("language_requirements"),
+        "nationality_rule": verified_nat_rule,
+        "min_work_years": sanitized_fields.get("min_work_years"),
+        "max_age": sanitized_fields.get("max_age"),
+        "funding_type": sanitized_fields.get("funding_type") or "unknown",
         "evidence": extraction.evidence or {},
         "field_verification": field_verifications,
         "content_hash": content_hash,
     }
 
-    # 9. Save as DRAFT in the database
+
+def ingest(
+    official_url: str,
+    db: Optional[Session] = None,
+    client: Optional[LLMClient] = None,
+    page_html_override: Optional[str] = None,
+    skip_url_validation: bool = False,
+) -> Grant:
+    """Ingest an official scholarship URL and convert it into a verified draft Grant."""
+    grant_payload = extract_grant_preview(
+        official_url,
+        client=client,
+        page_html_override=page_html_override,
+        skip_url_validation=skip_url_validation,
+    )
+
     if db is not None:
-        saved_grant = save_draft(db, grant_payload)
-        return saved_grant
-    else:
-        with get_db() as session:
-            saved_grant = save_draft(session, grant_payload)
-            return saved_grant
+        return save_draft(db, grant_payload)
+    with get_db() as session:
+        return save_draft(session, grant_payload)

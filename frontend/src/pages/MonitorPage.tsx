@@ -125,24 +125,15 @@ export default function MonitorPage() {
                 {sysStatus.search_configured ? t('readyYes') : t('readyNo')}
               </span>
             </div>
-
-            <div className="row">
-              <div className="row__main">
-                <div className="row__title">راصد قنوات التيليجرام</div>
-                <div className="row__meta">قراءة تلقائية لروابط القنوات المعتمدة</div>
-              </div>
-              <span className={sysStatus.telegram_configured ? 'pill pill--paid' : 'pill pill--partial'}>
-                <Icon name={sysStatus.telegram_configured ? 'checkCircle' : 'alert'} />
-                {sysStatus.telegram_configured ? t('readyYes') : t('readyNo')}
-              </span>
-            </div>
           </div>
         </Card>
       )}
 
-      <Card title={t('apiKeysTitle')} icon="vault">
-        <ApiKeysForm status={sysStatus} onSaved={(updated) => setSysStatus(updated)} />
-      </Card>
+      {sysStatus?.dev_keys_enabled && (
+        <Card title={t('apiKeysTitle')} icon="vault">
+          <ApiKeysForm status={sysStatus} onSaved={(updated) => setSysStatus(updated)} />
+        </Card>
+      )}
 
       <Card title={t('logsCardTitle')} icon="list">
         {loading && <Skeleton height={56} count={4} />}

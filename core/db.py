@@ -48,9 +48,11 @@ SessionLocal = sessionmaker(
 
 
 def init_db(target_engine=None) -> None:
-    """Create all tables in the database if they do not exist."""
+    """Apply ordered database migrations on the target SQLAlchemy engine."""
+    from migrations.runner import run_migrations
+
     bind = target_engine or engine
-    Base.metadata.create_all(bind=bind)
+    run_migrations(bind)
 
 
 @contextmanager

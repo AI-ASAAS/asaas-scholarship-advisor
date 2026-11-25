@@ -28,13 +28,19 @@ from core.db import get_db, init_db
 from core.models import Grant, GrantStatus
 from core.repository import log_update, mark_expired
 from ingestion_sub_agent import compute_content_hash, fetch_page
+from utils.url_guard import safe_request
+
+import threading
+
+_MONITOR_RUN_LOCK = threading.Lock()
+_SCHEDULER_LOCK_HANDLE: Any = None
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def send_alert(alert_type: str, title: str, details: str, webhook_url: Optional[str] = None) -> Dict[str, Any]:
-    """Issue a structured alert via logging and optional webhook."""
+    """Issue a structured alert via logging and optional SSRF-guarded webhook."""
     alert_payload = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "alert_type": alert_type,
@@ -49,10 +55,15 @@ def send_alert(alert_type: str, title: str, details: str, webhook_url: Optional[
     target_url = webhook_url or settings.ALERT_WEBHOOK_URL
     if target_url:
         try:
-            with httpx.Client(timeout=5.0) as client:
-                client.post(target_url, json=alert_payload)
+            safe_request(
+                "POST",
+                target_url,
+                json_body=alert_payload,
+                allowed_content_types=None,
+                timeout=5.0,
+            )
         except Exception as exc:
-            logger.error("Failed to send alert to webhook: %s", exc)
+            logger.error("Failed to send alert to webhook: %s", type(exc).__name__)
 
     return alert_payload
 
@@ -171,8 +182,8 @@ def check_grant_updates(
         "changes": [],
     }
 
-    # Log content hash change
-    log_update(
+    # Log content hash change AND queue an admin review item (do not auto-edit other grant fields)
+    ulog_hash = log_update(
         db=db,
         grant_id=grant.id,
         field_name="content_hash",
@@ -182,28 +193,49 @@ def check_grant_updates(
     )
     change_info["changes"].append("content_hash")
 
-    # 2. Check for deadline changes if an updated deadline was parsed
+    from modules.notifications.repository import NotificationsRepository
+
+    NotificationsRepository.create_review_item(
+        db,
+        grant_id=grant.id,
+        update_log_id=ulog_hash.id,
+        field_name="content_hash",
+        old_value=grant.content_hash,
+        new_value=current_hash,
+        summary_ar=f"رُصد تغيير في محتوى الصفحة الرسمية لمنحة «{grant.title}»؛ بانتظار اعتماد المشرف قبل إشعار الطلاب.",
+    )
+
+    # 2. Check for deadline changes if an updated deadline was parsed (staged in review queue)
     if extracted_deadline_override is not None and extracted_deadline_override != grant.deadline:
         old_dl_str = str(grant.deadline) if grant.deadline else "None"
         new_dl_str = str(extracted_deadline_override)
 
-        log_update(
+        ulog_dl = log_update(
             db=db,
             grant_id=grant.id,
             field_name="deadline",
             old_value=old_dl_str,
             new_value=new_dl_str,
-            notified=True,
+            notified=False,
+        )
+        NotificationsRepository.create_review_item(
+            db,
+            grant_id=grant.id,
+            update_log_id=ulog_dl.id,
+            field_name="deadline",
+            old_value=old_dl_str,
+            new_value=new_dl_str,
+            summary_ar=f"رُصد تغيّر الموعد النهائي لمنحة «{grant.title}» من {old_dl_str} إلى {new_dl_str}؛ بانتظار اعتماد المشرف.",
         )
         send_alert(
             alert_type="DEADLINE_CHANGED",
             title=grant.title,
-            details=f"Official deadline updated from {old_dl_str} to {new_dl_str}! Pending human review.",
+            details=f"Official deadline change detected ({old_dl_str} -> {new_dl_str})! Pending admin review.",
             webhook_url=webhook_url,
         )
         change_info["changes"].append(f"deadline: {old_dl_str} -> {new_dl_str}")
 
-    # Update the content hash fingerprint (without altering other published fields automatically)
+    # Update fingerprint only; never auto-overwrite published content/deadline fields
     grant.content_hash = current_hash
     db.add(grant)
     db.flush()
@@ -230,8 +262,15 @@ def run_monitor_cycle(
             if res:
                 modified_grants.append(res)
 
-        # Check closing and expiration alerts
+        # Check closing and expiration alerts + deduplicated student plan notifications
         deadline_alerts = check_imminent_deadlines(session, reference_date=reference_date, webhook_url=webhook_url)
+        from modules.notifications.service import NotificationsService
+        from modules.students.retention import run_retention_cleanup
+
+        student_notifs_created = NotificationsService().generate_plan_alerts(
+            session, reference_date=reference_date
+        )
+        retention_summary = run_retention_cleanup(session)
 
         session.commit()
 
@@ -240,28 +279,75 @@ def run_monitor_cycle(
             "total_published_checked": len(published_grants),
             "content_modifications_found": len(modified_grants),
             "deadline_alerts_issued": len(deadline_alerts),
+            "student_notifications_created": student_notifs_created,
+            "retention": retention_summary,
             "details": {
                 "modifications": modified_grants,
                 "alerts": deadline_alerts,
             },
         }
         logger.info(
-            "Cycle finished: Checked %d grants | %d modifications | %d deadline alerts",
+            "Cycle finished: Checked %d grants | %d modifications | %d deadline alerts | %d student notifications",
             len(published_grants),
             len(modified_grants),
             len(deadline_alerts),
+            student_notifs_created,
         )
         return summary
 
-    if db is not None:
-        return _execute(db)
-    else:
+    if not _MONITOR_RUN_LOCK.acquire(blocking=False):
+        raise RuntimeError("A monitor cycle is already running in this process.")
+    try:
+        if db is not None:
+            return _execute(db)
         with get_db() as session:
             return _execute(session)
+    finally:
+        _MONITOR_RUN_LOCK.release()
+
+
+def acquire_scheduler_lock(lock_path: Optional[Path] = None) -> bool:
+    """Acquire exclusive OS file lock so APScheduler runs as a single process only."""
+    global _SCHEDULER_LOCK_HANDLE
+    path = lock_path or (PROJECT_ROOT / ".monitor_scheduler.lock")
+    fh = None
+    try:
+        fh = open(path, "a+", encoding="utf-8")
+        fh.seek(0)
+        if sys.platform.startswith("win"):
+            import msvcrt
+
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _SCHEDULER_LOCK_HANDLE = fh
+        return True
+    except OSError:
+        if fh is not None:
+            try:
+                fh.close()
+            except Exception:
+                pass
+        return False
+
+
+def release_scheduler_lock() -> None:
+    global _SCHEDULER_LOCK_HANDLE
+    if _SCHEDULER_LOCK_HANDLE is not None:
+        try:
+            _SCHEDULER_LOCK_HANDLE.close()
+        except Exception:
+            pass
+        _SCHEDULER_LOCK_HANDLE = None
 
 
 def start_scheduler(interval_hours: int = 24):
-    """Start recurring APScheduler background job."""
+    """Start recurring APScheduler background job guarded against double execution."""
+    if not acquire_scheduler_lock():
+        raise RuntimeError("Scheduler lock already held by another process; refusing duplicate start.")
+
     from apscheduler.schedulers.blocking import BlockingScheduler
 
     scheduler = BlockingScheduler()
@@ -272,22 +358,34 @@ def start_scheduler(interval_hours: int = 24):
         id="scholarship_monitor_daily",
         name="Daily Scholarship Monitor & Freshness Checker",
         replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
-    logger.info("Scheduler started: running every %d hours.", interval_hours)
+    logger.info("Scheduler started (single-leader lock acquired): running every %d hours.", interval_hours)
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
         logger.info("Scheduler stopped.")
+    finally:
+        release_scheduler_lock()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Scholarship Monitor Service (Task 9).")
     parser.add_argument("--now", action="store_true", help="Execute an immediate monitor check cycle and exit.")
     parser.add_argument("--schedule", action="store_true", help="Start the periodic daemon scheduler.")
+    parser.add_argument("--retention", action="store_true", help="Run D12 privacy data retention purge and exit.")
     parser.add_argument("--interval", type=int, default=24, help="Hours between scheduled runs (default: 24).")
     args = parser.parse_args()
 
-    if args.schedule:
+    if args.retention:
+        init_db()
+        from modules.students.retention import run_retention_cleanup
+
+        with get_db() as db:
+            summary = run_retention_cleanup(db)
+        print("RETENTION CLEANUP SUMMARY:", summary)
+    elif args.schedule:
         start_scheduler(interval_hours=args.interval)
     else:
         summary = run_monitor_cycle()

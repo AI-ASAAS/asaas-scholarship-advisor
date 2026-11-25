@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Testing & Development
+pytest>=8.2.0

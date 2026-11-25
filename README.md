@@ -1,190 +1,81 @@
-# منح أساس — وكيل الاستكشاف والبحث المستقل للمنح الدراسية
-### Autonomous Discovery & Web Research Sub-Agent (Full-Stack AI Agents + ASAAS UI)
+# منح أساس — مستشار المنح الدراسية (ASAAS Scholarship Advisor Agent)
 
-> **المطوّر:** [Anas Abdulaziz Moqbel Al-Aghbari (@Anas-ALAghbari)](https://github.com/Anas-ALAghbari) — منظمة **[AI-ASAAS](https://github.com/AI-ASAAS)**
-
-منصة متكاملة من وكلاء الذكاء الاصطناعي المستقلين لاستكشاف المنح الدراسية العالمية المخصّصة للطلاب اليمنيين، والتحقق منها ومراقبتها وفق مبدأ صارم ضد الهلوسة: **«الكود يتحقق والموديل ينقل»**، ومبنية بالكامل وفق معايير **[AI-ASAAS/skills](https://github.com/AI-ASAAS/skills)** (AI + Backend FastAPI + Frontend `asaas-ui`).
-
-للاطلاع على معمارية وتشغيل منصة الوكلاء والمنسق الحواري (`agent_platform` على المنفذ 8010)، راجع [دليل المنصة (docs/PLATFORM.md)](docs/PLATFORM.md).
+منصة ويب عربية أولاً (`RTL`، مصممة للجوال `375px` أولاً مع تبديل للإنجليزية `LTR`) تساعد الطلاب — اليمنيين كجمهور أساسي وجميع الجنسيات عبر نموذج أهلية عام — في استكشاف المنح الرسمية الموثقة، وحساب التطابق بشفافية، وتحليل الملف وتقويته، وإعداد مسودات المستندات وبناء خطة تقديم شخصية، مع مراقبة التحديثات والتنبيهات ومحادثة مستشار ذكي مقيد بالمجال.
 
 ---
 
-## ✨ أبرز المزايا والقدرات
+## القدرات العشر المنجزة
 
-* **أفضل 10 منح حقيقية متاحة (`/`)**: قاعدة بيانات SQLite (وضع WAL، قابلة للنقل إلى PostgreSQL) بفهرس مركّب على `(status, deadline)` تعرض المنح المنشورة وغير المنتهية فقط مرتبة بأقرب موعد إغلاق، مع نافذة تفاصيل تعرض **الاقتباس الحرفي الموثّق بالكود (`evidence`)** لكل حقل.
-* **وكيل الاستخلاص الذاتي بالرابط (`/admin` — `ingestion_sub_agent.py`)**: يأخذ الرابط الرسمي للمنحة، يتحقق من النطاق الموثوق و`HTTP 200`، يتتبع رابطاً فرعياً واحداً (نفس النطاق، عمق 1) للشروط أو التمويل، يستخرج البيانات بمخطط Pydantic صارم (`temperature = 0`)، ويحفظها حصراً كمسودة `DRAFT` لاعتماد الإدارة.
-* **وكيل البحث الخارجي العميق ReAct (`/search` — `external_search_sub_agent.py`)**: يعمل بنمط `Thought ➔ Action ➔ Observation` بحد أقصى **5 خطوات** عبر Tavily أو Serper مع قائمة منسدلة لـ **22 دولة مستهدفة**، يزور الصفحات الرسمية فعلياً، يتحقق من قبول الطلاب اليمنيين بنص صريح (`yes` / `no` / `unclear`)، ويعرض سجل التفكير بالكامل بالعربية المختصرة.
-* **مراقب التحديثات والمواعيد (`/monitor` — `monitor_service.py`)**: يفحص الروابط الرسمية للمنح المنشورة عبر بصمة `SHA-256`، يسجل التغييرات في `UpdateLog` دون تعديل المنحة المنشورة تلقائياً، يطلق تنبيهات الإغلاق القريب (قبل 7 أيام و 3 أيام)، ويسم المنتهية بـ `EXPIRED` مع جدولة يومية عبر `APScheduler`.
-* **راصد قنوات التيليجرام (`integrations/telegram_watcher.py`)**: يقرأ منشورات القنوات المعتمدة عبر `Telethon`، يستخرج الروابط الرسمية فقط بالـ Regex، يرفض روابط `t.me` والمجمّعات الإعلانية، يزيل المكرر مقابل قاعدة البيانات، ويمرّر الروابط الجديدة مباشرة إلى `ingest()`.
-* **واجهة ASAAS UI متجاوبة (`frontend/`)**: خطوط ثمانية (`Sans` / `Serif Display` / `Serif Text` / `<Swash>`)، تصميم Liquid Glass، دعم كامل للعربية `RTL` والإنجليزية `LTR`، وضع ليلي/نهاري، استجابة كاملة للجوال (`375px` بصفر تمرير أفقي)، وحقول إدخال يدوية آمنة لمفاتيح الـ API مع تفعيل فوري بدون إعادة تشغيل الخادم.
-
----
-
-## 🏛️ الهيكلية المعمارية (4-Layer Architecture)
-
-```text
-Frontend (React 19 + Vite + TypeScript + asaas-ui)
-  ├── /          أفضل 10 منح + نافذة الأدلة الحرفية
-  ├── /search    وكيل البحث الخارجي العميق ReAct + عارض سجل التفكير
-  ├── /admin     وكيل الاستخلاص بالرابط + اعتماد المسودات + راصد التيليجرام
-  └── /monitor   مراقب التحديثات + جاهزية المفاتيح + سجل UpdateLog
-        │
-        ▼
-FastAPI HTTP Boundary (api/main.py + api/schemas.py)
-        │
-        ▼
-Agents Layer:
-  ├── ingestion_sub_agent.py           (الاستخلاص الذاتي وتتبع الرابط الفرعي)
-  ├── external_search_sub_agent.py     (وكيل البحث العميق ReAct — حد 5 خطوات)
-  ├── monitor_service.py               (مراقب البصمات وتنبيهات الإغلاق والجدولة)
-  └── integrations/telegram_watcher.py (راصد قنوات التيليجرام)
-        │
-        ▼
-Verification & Anti-Hallucination Layer:
-  ├── utils/url_validator.py           (HTTP 200 + نطاق رسمي + مطابقة الاسم)
-  ├── utils/evidence_check.py          (تطبيع النصوص وتصفير أي حقل بلا اقتباس حرفي)
-  ├── utils/llm_extractor.py           (Pydantic v2 + temperature=0 + توجيه تلقائي للمزوّد)
-  └── prompts/*.md                     (ملفات برومبت مرقّمة ومفصولة عن الكود)
-        │
-        ▼
-Data Layer (SQLite WAL / PostgreSQL Portable):
-  ├── core/config.py                   (إعدادات البيئة)
-  ├── core/models.py                   (Grant, GrantStatus, YemeniEligibilityStatus, UpdateLog)
-  ├── core/db.py                       (WAL Mode + Foreign Keys + Busy Timeout)
-  └── core/repository.py               (get_top_10_grants, save_draft, publish, log_update)
-```
+1. **أفضل 10 منح معتمدة (`/`)**: منح منشورة غير منتهية مرتبة بالأولوية المنسّقة (`featured_rank`) ثم أقرب موعد إغلاق، مع نافذة تفاصيل واقتباسات حرفية موثّقة بالكود (`evidence`).
+2. **إضافة المنح للمشرف بالرابط الرسمي (`/admin`)**: استخلاص آلي محمي ضد SSRF (`extraction@2.0` + `verify_evidence`) يُحفظ كمسودة `DRAFT` فقط ولا يُنشر إلا باعتماد المشرف.
+3. **الملف الشخصي وحساب التطابق (`/profile`, `/matches`)**: جلسة طالب مجهولة الهوية في كوكي `HttpOnly` مع موافقة صريحة (`privacy-v1`)، تقييم بوابات الأهلية والجنسيات والمعدل بلغة بايثون حتمية بالكود دون تدخل النموذج في الدرجات.
+4. **البحث الخارجي الواعي بالملف (`/search`)**: بحث مقيد بالسقوف (استعلامات/صفحات/خطوات/وقت/رموز) عبر `modules/search/`، فحص النطاقات وSSRF، التحقق بالاقتباس، ذاكرة 24 ساعة، وترقية للمشرف كمسودة فقط.
+5. **تحليل الملف الشخصي (`/matches`)**: نقاط القوة والضعف والفجوات مستخرجة بالكود ومصاغة بالعربية مع بديل حتمي.
+6. **توصيات تقوية الملف (`/documents`)**: فجوات عملية مرتبطة بشروط المنح وتقديرات تحضيرية موسومة كافتراضات.
+7. **مساعدة مستندات التقديم (`/documents`)**: سيرة ذاتية، رسالة دافع، ودعم التوصية (طلب + ملخص للموصي دون كتابة خطاب موقّع) مع سجل حقائق (`FactsLedger`) يميّز أي ادعاء غير موثق.
+8. **خطة التقديم الشخصية (`/plan`)**: ترتيب المنح المختارة حسب التطابق والموعد، قائمة متطلبات ومراحل مقترحة، كشف تداخل المواعيد، وتصدير تقويم `.ics`.
+9. **المراقبة والتنبيهات (`/notifications`, `/admin`, `monitor_service.py`)**: رصد التغييرات عبر `SHA-256` ووضعها في طابور مراجعة المشرف (`GrantChangeReview`) قبل إشعار الطلاب، تذكيرات `14/7/3/1` أيام داخل التطبيق، قفل جدولة أحادي، وراصد تيليغرام مسجّل/اختياري.
+10. **مستشار المنح الذكي (أداة المحادثة العائمة)**: مساعد حواري مقيّد بأدوات القراءة والاقتراحات المؤكدة من الطالب ورفض عربي ثابت لأي طلب خارج المنح.
 
 ---
 
-## 🔑 مزوّدو الذكاء الاصطناعي والبحث المدعومون (توجيه تلقائي)
+## التثبيت والتشغيل المحلي
 
-يدعم النظام إدخال المفاتيح يدوياً من الواجهة مباشرة (في بطاقة الاستخلاص والبحث وصفحة المراقب) مع حفظ محلي آمن في `.env` وإخفاء الأسرار (`AIza••••9876`)، أو إضافتها مباشرة في ملف `.env`:
-
-| الاستخدام | المزوّد المدعوم | بادئة المفتاح | رابط الحصول على مفتاح |
-|---|---|---|---|
-| **الاستخلاص بالذكاء الاصطناعي (`LLM_API_KEY`)** | Google Gemini *(موصى به — مجاني)* | `AIza...` | [Google AI Studio](https://aistudio.google.com/apikey) |
-| **الاستخلاص بالذكاء الاصطناعي (`LLM_API_KEY`)** | Groq *(سريع ومجاني)* | `gsk_...` | [Groq Console](https://console.groq.com/keys) |
-| **الاستخلاص بالذكاء الاصطناعي (`LLM_API_KEY`)** | OpenRouter | `sk-or-...` | [OpenRouter Keys](https://openrouter.ai/keys) |
-| **الاستخلاص بالذكاء الاصطناعي (`LLM_API_KEY`)** | OpenAI | `sk-...` | [OpenAI Platform](https://platform.openai.com/api-keys) |
-| **البحث الخارجي العميق (`TAVILY_API_KEY`)** | Tavily *(أساسي — 1000 بحث مجاني)* | `tvly-...` | [Tavily Dashboard](https://app.tavily.com) |
-| **البحث الخارجي العميق (`SERPER_API_KEY`)** | Serper *(بديل اختياري)* | — | [Serper.dev](https://serper.dev) |
-| **راصد التيليجرام (`TELEGRAM_API_ID` / `HASH`)** | Telegram Telethon *(اختياري)* | — | [my.telegram.org](https://my.telegram.org) |
-
-> **تنبيه ذكي مدمج**: يكتشف النظام تلقائياً إذا تم إدخال مفتاح بحث Tavily (`tvly-...`) في حقل الذكاء الاصطناعي ويعرض توجيهاً فورياً بالعربية.
-
----
-
-## 🚀 التثبيت والتشغيل المحلي
-
-### 1. تجهيز بيئة Python والخادم الخلفي
-```bash
-# إنشاء وتفعيل البيئة الافتراضية
+### 1. البيئة الخلفية والترحيل والبذر
+```powershell
 python -m venv .venv
-# Windows PowerShell:
 .venv\Scripts\Activate.ps1
 
-# تثبيت الاعتماديات
 pip install -r requirements.txt
+pip install -r requirements-dev.txt
+copy .env.example .env
 
-# نسخ ملف البيئة
-cp .env.example .env
-
-# تعبئة قاعدة البيانات بأول 10 منح حقيقية ونشرها
+# تشغيل الترحيلات المرتبة وبذر أول 10 منح منشورة
+python -c "from core.db import engine; from migrations.runner import run_migrations; run_migrations(engine)"
 python seed/seed_db.py --publish
+
+# تشغيل الخادم الخلفي (يخدم API و frontend/dist معاً)
+$env:PYTHONPATH = ".;src"
+uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-### 2. بناء وتشغيل الواجهة الأمامية (ASAAS UI)
-```bash
+### 2. بناء الواجهة الأمامية وتشغيلها للتطوير
+```powershell
 cd frontend
-npm install
+npm ci
+npm run lint
 npm run build
-cd ..
-
-# تشغيل خادم FastAPI (يخدم الـ API والواجهة المبنية معاً)
-python -m uvicorn api.main:app --host 127.0.0.1 --port 8001
-# افتح المتصفح على: http://127.0.0.1:8001
+# أو وضع التطوير مع HMR:
+npm run dev
 ```
 
-### 3. تشغيل الوكلاء مباشرة من سطر الأوامر (CLI)
-```bash
-# وكيل البحث الخارجي العميق ReAct:
-python external_search_sub_agent.py --major "Computer Science" --degree "Master" --country "Germany"
+### 3. الاختبارات والتقييمات والمراقب
+```powershell
+# تشغيل حزمة الاختبارات الكاملة معزولة دون أي شبكة:
+$env:PYTHONPATH = ".;src;.venv\Lib\site-packages"
+$env:AGENT_OFFLINE = "1"
+python -m pytest -q
 
-# تشغيل دورة فحص فورية للمراقب:
-python monitor_service.py --now
+# تشغيل تقييمات الذكاء الاصطناعي (استخدم --stub بدون مفتاح، أو --save مع مفتاح حي):
+python -m evals.run_eval extraction --stub
+python -m evals.run_eval profile_analysis --stub
+python -m evals.run_eval advisor --stub
+python -m evals.run_eval documents --stub
+python -m evals.run_eval external_search --stub
 
-# تشغيل المراقب المجدول يومياً (APScheduler):
-python monitor_service.py --schedule --interval 24
-
-# قراءة آخر منشورات قنوات التيليجرام المعتمدة:
-python integrations/telegram_watcher.py --limit 20
+# تشغيل دورة المراقبة + تنبيهات الطلاب + تنظيف الاحتفاظ بالبيانات:
+python -m monitor_service --now
+# أو في الإنتاج كعملية جدولة مستقلة واحدة:
+python -m monitor_service --schedule --interval 24
 ```
 
 ---
 
-## 🔌 نقاط نهاية الـ API (FastAPI Endpoints)
+## الوثائق الهندسية والتشغيلية
 
-| المسار | الطريقة | الوظيفة |
-|---|---|---|
-| `/api/grants/top10` | `GET` | استرجاع أفضل 10 منح منشورة وغير منتهية مرتبة بأقرب موعد |
-| `/api/grants?status=` | `GET` | عرض المنح مع الفلترة (`all` / `draft` / `published` / `expired`) والإحصائيات |
-| `/api/grants/{id}/publish` | `POST` | اعتماد ونشر منحة من الإدارة |
-| `/api/agents/ingest` | `POST` | استخلاص منحة من رابط رسمي كمسودة `DRAFT` (يدعم تمرير المفتاح مباشرة) |
-| `/api/agents/search` | `POST` | تشغيل وكيل البحث العميق ReAct وإرجاع النتائج الموثّقة + سجل التفكير |
-| `/api/agents/monitor/run` | `POST` | تنفيذ دورة فحص فورية للمواقع الرسمية والمواعيد |
-| `/api/agents/monitor/logs` | `GET` | استرجاع سجل التحديثات والتغييرات `UpdateLog` |
-| `/api/agents/telegram/process` | `POST` | فحص منشورات تيليجرام واستخراج الروابط الرسمية وفلترتها |
-| `/api/system/status` | `GET` | حالة جاهزية المفاتيح وإحصائيات القاعدة (مع قناع أمان بدون كشف أسرار) |
-| `/api/system/keys` | `POST` | حفظ وتفعيل مفاتيح الـ API يدوياً وفورياً بدون إعادة تشغيل |
-
----
-
-## ☁️ النشر السحابي (Docker / Railway / Render / Cloudflare)
-
-المشروع مجهّز بالكامل للنشر السحابي مع تعبئة تلقائية لأول 10 منح عند أول إقلاع:
-* **Docker**: يحتوي على [`Dockerfile`](Dockerfile) متعدد المراحل (يبني واجهة React/Vite ثم يشغّل FastAPI على `${PORT}`).
-* **Railway**: جاهز تلقائياً عبر [`railway.json`](railway.json).
-* **Render**: جاهز عبر [`render.yaml`](render.yaml).
-* **Cloudflare Quick Tunnel** (رابط HTTPS عام فوري من جهازك):
-  ```bash
-  cloudflared tunnel --url http://127.0.0.1:8001
-  ```
-
----
-
-## 🧪 الاختبارات والتحقق من الجودة
-
-```bash
-# تشغيل جميع اختبارات Python (39 اختباراً للوحدة والتكامل E2E والـ API)
-pytest -v
-
-# فحص TypeScript وبناء الإنتاج للواجهة الأمامية
-cd frontend && npm run build
-```
-
-| ملف الاختبار | نطاق التغطية |
-|---|---|
-| `tests/test_repository.py` | استرجاع أفضل 10 منح، استبعاد المسودات والمنتهية، والترتيب |
-| `tests/test_url_validator.py` | رفض المجمّعات الإعلانية والروابط الميتة وغير المطابقة |
-| `tests/test_evidence_check.py` | تطبيع النصوص وتصفير الحقول ذات الاقتباسات المختلقة |
-| `tests/test_llm_extractor.py` | البرومبتات المرقّمة ومخطط Pydantic وتنظيف JSON |
-| `tests/test_ingestion.py` | الاستخلاص بصفحة HTML محلية وتتبع الرابط الفرعي والصفحات الناقصة |
-| `tests/test_seed.py` | تعبئة المنح الـ 10 الحقيقية ونشرها |
-| `tests/test_monitor.py` | تغير البصمة والمواعيد وتنبيهات الـ 7 أيام والـ 3 أيام والانتهاء |
-| `tests/test_external_search.py` | حلقة ReAct، حد الـ 5 خطوات، وفحص قبول اليمنيين |
-| `tests/test_telegram_watcher.py` | استخراج روابط تيليجرام، رفض `t.me` والمجمّعات، ومنع التكرار |
-| `tests/test_api.py` | نقاط FastAPI، قناع الأسرار، وصيغة أخطاء ASAAS الموحدة |
-| `tests/test_e2e_pipeline.py` | السيناريو الكامل من البداية للنهاية + اختبار الهلوسة المتعمّد |
-
----
-
-## ✅ قائمة التسليم النهائية
-- [x] قاعدة بيانات مهيأة تحتوي على أول 10 منح حقيقية بروابط رسمية وأهلية موثّقة لليمنيين
-- [x] منظومة منع هلوسة صارمة: كل حقل موثّق باقتباس حرفي محقق بالكود، والمجهول يرجع `null`
-- [x] كل المنح الجديدة تدخل بحالة `draft` والنشر حصراً بقرار الإدارة
-- [x] وكيل البحث العميق ReAct بحد 5 خطوات، ورفض كامل للروابط غير الرسمية
-- [x] مراقب دوري بالبصمة الرقمية وتنبيهات 7 و 3 أيام وجدولة `APScheduler`
-- [x] راصد قنوات التيليجرام لاستخراج الروابط الرسمية تلقائياً
-- [x] واجهة أمامية كاملة بحزمة `asaas-ui` (متجاوبة للهاتف، ليل/نهار، عربي/إنجليزي، وإدخال يدوي للمفاتيح)
-- [x] لا توجد أي مفاتيح سرية مكشوفة في المستودع (`.env` خارج Git)
-- [x] جميع الاختبارات (**39/39**) وبناء الإنتاج يمرون بنسبة 100%
+- [المعمارية وحدود الثقة (`docs/architecture.md`)](docs/architecture.md)
+- [دليل العمليات والحدود والنسخ الاحتياطي (`docs/operations.md`)](docs/operations.md)
+- [دليل المشرف لإضافة ومراجعة المنح (`docs/add-a-grant.md`)](docs/add-a-grant.md)
+- [دليل النشر والتحضير للإطلاق (`docs/deploy.md`)](docs/deploy.md)
+- [تقرير التدقيق الأمني الشامل (`docs/security/audit-report.md`)](docs/security/audit-report.md)
+- [سجل القرارات الهندسية (`docs/decisions.md`)](docs/decisions.md)

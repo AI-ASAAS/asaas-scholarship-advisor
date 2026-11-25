@@ -18,9 +18,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY requirements-deploy.txt ./
 RUN pip install --no-cache-dir -r requirements-deploy.txt
 
-# Copy backend modules and agents
+# Copy backend modules, migrations, and agents
 COPY api/ ./api/
 COPY core/ ./core/
+COPY migrations/ ./migrations/
+COPY modules/ ./modules/
 COPY utils/ ./utils/
 COPY prompts/ ./prompts/
 COPY seed/ ./seed/
@@ -31,6 +33,9 @@ COPY ingestion_sub_agent.py external_search_sub_agent.py monitor_service.py ./
 
 # Copy built frontend static assets
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+
+RUN useradd --create-home --shell /bin/sh appuser && chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8000
 

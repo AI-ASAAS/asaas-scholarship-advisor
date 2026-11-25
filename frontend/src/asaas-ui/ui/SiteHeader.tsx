@@ -6,8 +6,8 @@ import { Icon } from './Icon';
 export interface SiteHeaderProps {
   /** Logo and name, usually a link to the home page. */
   brand: ReactNode;
-  /** The site's links (`<NavLink>` or `<a>`), rendered once: inline on desktop, in the menu on phones. */
-  nav: ReactNode;
+  /** The site's links (`<NavLink>` or `<a>`), rendered inside the phone menu on 900px and below. */
+  nav?: ReactNode;
   /** Controls that stay visible at every width: theme, language, sign-in. Keep it to two or three. */
   actions?: ReactNode;
 }
@@ -53,26 +53,32 @@ export function SiteHeader({ brand, nav, actions }: SiteHeaderProps) {
     <header className="site-header" data-open={open}>
       <div className="site-header__scrim" aria-hidden="true" onClick={() => setOpen(false)} />
       <div className="container">
-        <Glass thick pill className="site-header__bar">
-          <div className="site-header__brand">{brand}</div>
-          <nav id={navId} className="site-nav" aria-label={kitText('mainNav')} onClick={onNavClick}>
-            {nav}
-          </nav>
-          <div className="site-header__actions">
-            {actions}
-            <button
-              ref={menuButton}
-              type="button"
-              className="btn btn--ghost btn--icon site-header__menu"
-              aria-label={kitText('menu')}
-              aria-expanded={open}
-              aria-controls={navId}
-              onClick={() => setOpen((value) => !value)}
-            >
-              <Icon name={open ? 'close' : 'menu'} />
-            </button>
-          </div>
-        </Glass>
+        <div className="site-header__wrap">
+          <Glass thick pill className="site-header__bar">
+            <div className="site-header__brand">{brand}</div>
+            <div className="site-header__actions">
+              {actions}
+              {nav && (
+                <button
+                  ref={menuButton}
+                  type="button"
+                  className="btn btn--ghost btn--icon site-header__menu"
+                  aria-label={kitText('menu')}
+                  aria-expanded={open}
+                  aria-controls={navId}
+                  onClick={() => setOpen((value) => !value)}
+                >
+                  <Icon name={open ? 'close' : 'menu'} />
+                </button>
+              )}
+            </div>
+          </Glass>
+          {nav && (
+            <nav id={navId} className="site-nav" aria-label={kitText('mainNav')} onClick={onNavClick}>
+              {nav}
+            </nav>
+          )}
+        </div>
       </div>
     </header>
   );

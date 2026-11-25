@@ -22,7 +22,14 @@ export const formatCompact = (value: number) => compact.format(value);
 const utc = (period: string) => new Date(`${period}-01T00:00:00Z`);
 export const formatPeriod = (period: string) => monthYear.format(utc(period));
 export const formatMonthShort = (period: string) => monthShort.format(utc(period));
-export const formatDate = (date: string) => fullDate.format(new Date(`${date}T00:00:00Z`));
+export const formatDate = (date: string) => {
+  const raw = (date || '').trim();
+  if (!raw) return '';
+  const parsed = raw.includes('T')
+    ? new Date(raw.endsWith('Z') ? raw : `${raw}Z`)
+    : new Date(`${raw}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) ? raw : fullDate.format(parsed);
+};
 
 /** First letters of the first two names; a zero-width non-joiner keeps Arabic letters apart. */
 export function initials(name: string): string {

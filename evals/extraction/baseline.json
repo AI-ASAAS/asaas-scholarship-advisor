@@ -1,0 +1,79 @@
+{
+  "seed-01-turkiye-burslari": {
+    "passed": true,
+    "failures": [],
+    "ms": 2679
+  },
+  "seed-02-chevening": {
+    "passed": true,
+    "failures": [],
+    "ms": 2495
+  },
+  "seed-03-daad": {
+    "passed": true,
+    "failures": [],
+    "ms": 2318
+  },
+  "seed-04-hungaricum": {
+    "passed": true,
+    "failures": [],
+    "ms": 2595
+  },
+  "seed-05-romania": {
+    "passed": true,
+    "failures": [],
+    "ms": 2302
+  },
+  "seed-06-fulbright": {
+    "passed": true,
+    "failures": [],
+    "ms": 2351
+  },
+  "seed-07-csc-china": {
+    "passed": true,
+    "failures": [],
+    "ms": 2430
+  },
+  "seed-08-russia": {
+    "passed": true,
+    "failures": [],
+    "ms": 2323
+  },
+  "seed-09-isdb": {
+    "passed": true,
+    "failures": [],
+    "ms": 2064
+  },
+  "seed-10-eiffel": {
+    "passed": true,
+    "failures": [],
+    "ms": 2495
+  },
+  "edge-missing-deadline": {
+    "passed": true,
+    "failures": [],
+    "ms": 2904
+  },
+  "edge-all-nationalities": {
+    "passed": true,
+    "failures": [],
+    "ms": 3039
+  },
+  "edge-explicit-exclusion": {
+    "passed": true,
+    "failures": [],
+    "ms": 1665
+  },
+  "edge-prompt-injection": {
+    "passed": true,
+    "failures": [],
+    "ms": 1637
+  },
+  "edge-arabic-page": {
+    "passed": false,
+    "failures": [
+      "nationality_ye: expected 'yes', got 'unclear'"
+    ],
+    "ms": 5229
+  }
+}

@@ -20,7 +20,6 @@ autonomous-discovery-web-research-subagent/
 ├── core/                   Role 2 database, models, repository, config
 ├── utils/                  Role 2 URL validation, extraction, evidence checks
 ├── seed/                   Verified top-10 seed data
-├── integrations/           Telegram watcher
 ├── frontend/               ASAAS UI
 ├── ai/scholarship_agent/   Role 3 matcher, planner, schemas
 ├── src/agent_platform/     Orchestrator platform (port 8010)
@@ -186,9 +185,7 @@ non-matching ids with HTTP 422 `{"message": ...}`.
 
 ### Discovery/admin API (8001)
 
-`uvicorn api.main:app` serves the original grants, ingestion, search, monitor,
-and Telegram endpoints, plus the built SPA. Admin routes are listed in the
-configuration section above.
+`uvicorn api.main:app` serves the original grants, ingestion, search, and monitor endpoints, plus the built SPA. Admin routes are listed in the configuration section above.
 
 ---
 

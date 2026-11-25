@@ -112,7 +112,11 @@ class GrantRepository:
             bind=self._engine, autoflush=False, expire_on_commit=False
         )
         self._seed_lock = threading.Lock()
-        Base.metadata.create_all(bind=self._engine)
+        try:
+            from migrations.runner import run_migrations
+            run_migrations(self._engine)
+        except Exception:
+            Base.metadata.create_all(bind=self._engine)
         if seed_if_empty:
             self._seed_if_empty()
 

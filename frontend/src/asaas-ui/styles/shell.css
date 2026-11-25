@@ -48,10 +48,15 @@
   padding-top: max(12px, env(safe-area-inset-top, 0px));
 }
 
+.site-header__wrap {
+  position: relative;
+}
+
 .site-header__bar {
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
   min-height: var(--header-h);
   padding-inline: 20px 12px;

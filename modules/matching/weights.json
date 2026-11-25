@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "weights": {
+    "nationality": 20,
+    "degree_level": 20,
+    "gpa": 20,
+    "language": 20,
+    "field_of_study": 10,
+    "work_experience": 5,
+    "age": 5
+  }
+}

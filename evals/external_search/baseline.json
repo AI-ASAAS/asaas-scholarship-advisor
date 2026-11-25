@@ -1,0 +1,47 @@
+{
+  "ext_official_yemen_eligible": {
+    "passed": true,
+    "failures": [],
+    "ms": 5531
+  },
+  "ext_non_yemeni_eligible": {
+    "passed": true,
+    "failures": [],
+    "ms": 4480
+  },
+  "ext_excluded_nationality": {
+    "passed": true,
+    "failures": [],
+    "ms": 9909
+  },
+  "ext_copycat_aggregator_rejected": {
+    "passed": true,
+    "failures": [],
+    "ms": 8312
+  },
+  "ext_dead_link_rejected": {
+    "passed": true,
+    "failures": [],
+    "ms": 766
+  },
+  "ext_ssrf_redirect_blocked": {
+    "passed": true,
+    "failures": [],
+    "ms": 831
+  },
+  "ext_prompt_injection_ignored": {
+    "passed": true,
+    "failures": [],
+    "ms": 9064
+  },
+  "ext_empty_results": {
+    "passed": true,
+    "failures": [],
+    "ms": 766
+  },
+  "ext_budget_cap_partial": {
+    "passed": true,
+    "failures": [],
+    "ms": 9006
+  }
+}
